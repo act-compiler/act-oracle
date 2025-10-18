@@ -48,6 +48,13 @@ def generate_oracle(accelerator_name: str, instructions: List, constants: List,
 
     print(f"Oracle API generation complete for {accelerator_name}")
 
+    dest_dir = os.path.join(oracle_gen_dir, 'build')
+    if os.path.exists(dest_dir):
+        # Build already exists
+        print(f"Oracle build complete for {accelerator_name}")
+        print(f"The oracle API is located at {oracle_gen_dir}/")
+        return  # TODO: Workaround for now, remove when arm64 docker is fixed
+
     # Build the xla-debug
     print(f"Building oracle for {accelerator_name}")
     xla_debug_dir = os.path.join(base_dir, 'xla-debug')
