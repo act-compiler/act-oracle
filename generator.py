@@ -57,7 +57,7 @@ def generate_oracle(accelerator_name: str, instructions: List, constants: List,
 
     # Build the xla-debug
     print(f"Building oracle for {accelerator_name}")
-    xla_debug_dir = os.path.join(base_dir, 'xla-debug')
+    xla_debug_dir = os.path.join(base_dir, 'generators', 'oracle', 'xla-debug')
     xla_build_dir = os.path.join(xla_debug_dir, 'build')
     if os.path.exists(xla_build_dir):
         shutil.rmtree(xla_build_dir)
