@@ -30,6 +30,7 @@ class IdlVisitor(IDLV2Visitor):
             'reshape': 'RESHAPE',
             'convert': 'CONVERT',
             'constant': 'CONSTANT',
+            'concatenate': 'CONCATENATE',
             'copy': 'COPY',
             'bitcast_convert': 'BITCAST_CONVERT',
             'exponential': 'EXP',
@@ -159,6 +160,12 @@ class IdlVisitor(IDLV2Visitor):
                 const_val = attributes.get("value", "0")
             # Quote/escape for safe insertion into templates
             mapping["const"] = json.dumps(const_val)
+        elif template_name == 'CONCATENATE':
+            # Concatenate multiple inputs
+            input_list = []
+            for op_name in operand_names:
+                input_list.append(f'"{op_name}"')
+            mapping["inputs"] = '{' + ', '.join(input_list) + '}'
         # REDUCE
         elif template_name == 'REDUCE_ADD':
             assert(len(operand_names) == 1)
