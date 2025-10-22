@@ -165,8 +165,8 @@ class IdlVisitor(IDLV2Visitor):
             if len(operand_names) >= 2:
                 mapping["A"] = f'"{operand_names[0]}"'
                 mapping["B"] = f'"{operand_names[1]}"'
-            if 'dimensions' in attributes:
-                mapping["dim"] = str(attributes['dimensions'])
+            if 'dimension' in attributes:
+                mapping["dim"] = str(attributes['dimension'])
             else:
                 mapping["dim"] = "0"
         # REDUCE
