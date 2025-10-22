@@ -162,10 +162,13 @@ class IdlVisitor(IDLV2Visitor):
             mapping["const"] = json.dumps(const_val)
         elif template_name == 'CONCATENATE':
             # Concatenate multiple inputs
-            input_list = []
-            for op_name in operand_names:
-                input_list.append(f'"{op_name}"')
-            mapping["inputs"] = '{' + ', '.join(input_list) + '}'
+            if len(operand_names) >= 2:
+                mapping["A"] = f'"{operand_names[0]}"'
+                mapping["B"] = f'"{operand_names[1]}"'
+            if 'dimensions' in attributes:
+                mapping["dim"] = str(attributes['dimensions'])
+            else:
+                mapping["dim"] = "0"
         # REDUCE
         elif template_name == 'REDUCE_ADD':
             assert(len(operand_names) == 1)
