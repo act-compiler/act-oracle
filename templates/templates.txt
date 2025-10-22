@@ -342,11 +342,11 @@ line = f'{lhs_loc} = {lhs_type} slice({in_loc}), {dims}'
 output.append(line)
 
 ### TEMPLATE: CONCATENATE ###
-in_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = "{{{dims}}}"
-dims = dims.replace("'","")
-line = f'{lhs_loc} = {lhs_type} concatenate({in_loc}), dimensions={{0}}'
+dim = "{{{dim}}}"
+line = f'{lhs_loc} = {lhs_type} concatenate({a_loc}, {b_loc}), dimensions={dim}'
 output.append(line)
 
 ### TEMPLATE: ADD ###

@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 
 # Import external antlr4 package first before path manipulation
 from antlr4 import *
@@ -28,6 +29,8 @@ class IdlVisitor(IDLV2Visitor):
         self.op_to_template = {
             'reshape': 'RESHAPE',
             'convert': 'CONVERT',
+            'constant': 'CONSTANT',
+            'concatenate': 'CONCATENATE',
             'copy': 'COPY',
             'bitcast_convert': 'BITCAST_CONVERT',
             'exponential': 'EXP',
@@ -148,7 +151,24 @@ class IdlVisitor(IDLV2Visitor):
             mapping["lc"] = format_dims(attributes.get('lhs_contracting_dims', [1]))
             mapping["rb"] = format_dims(attributes.get('rhs_batch_dims', []))
             mapping["rc"] = format_dims(attributes.get('rhs_contracting_dims', [0]))
-
+        elif template_name == 'CONSTANT':
+            # Prefer parsed operand (constant(0) -> operand_names[0]).
+            # If no operand was parsed, fall back to attributes, then to '0'.
+            if len(operand_names) > 0:
+                const_val = operand_names[0]
+            else:
+                const_val = attributes.get("value", "0")
+            # Quote/escape for safe insertion into templates
+            mapping["const"] = json.dumps(const_val)
+        elif template_name == 'CONCATENATE':
+            # Concatenate multiple inputs
+            if len(operand_names) >= 2:
+                mapping["A"] = f'"{operand_names[0]}"'
+                mapping["B"] = f'"{operand_names[1]}"'
+            if 'dimension' in attributes:
+                mapping["dim"] = str(attributes['dimension'])
+            else:
+                mapping["dim"] = "0"
         # REDUCE
         elif template_name == 'REDUCE_ADD':
             assert(len(operand_names) == 1)
