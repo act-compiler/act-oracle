@@ -20,7 +20,7 @@ dependencies = [
 runtime = ["numpy", "jax"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.setuptools.package-data]
 "taidl_to.templates" = ["*.txt"]
