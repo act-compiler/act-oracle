@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taidl-to"
-version = "2.1"
+version = "2.2"
 description = "TAIDL-TO: Test Oracle Generator for Tensor Accelerator ISAs"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ authors = [
 ]
 readme = "README.md"
 dependencies = [
-    "taidl @ git+https://github.com/act-compiler/taidl.git@v2.2",
+    "taidl @ git+https://github.com/act-compiler/taidl.git@v2.3",
 ]
 
 [project.optional-dependencies]
