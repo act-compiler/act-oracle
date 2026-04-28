@@ -1,6 +1,7 @@
 """API file generator for Oracle"""
 
-from taidl.template import init_templates, templates, generate_code, write_file, indent_code
+from .template import init_templates, templates, generate_code, write_file, indent_code
+from .instruction_codegen import generate_api_function
 
 
 def generate_semantic_init(data_models):
@@ -57,6 +58,6 @@ def generate_api_file(oracle_gen_dir: str, accelerator_name: str, instructions,
     })
 
     for instruction in instructions:
-        output += instruction.generate_api_function()
+        output += generate_api_function(instruction)
 
     write_file(output, oracle_gen_dir + "/api.py")
