@@ -1,21 +1,10 @@
-import sys
-import os
+"""ANTLR4-based visitor for parsing TAIDL semantics into HLO generation code"""
 
-# Import external antlr4 package first before path manipulation
-from antlr4 import *
+from antlr4 import CommonTokenStream, InputStream
 
-# Add taidl/antlr4 to path for ANTLR4 generated files
-antlr4_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'taidl', 'antlr4')
-sys.path.insert(0, antlr4_path)
+from taidl.antlr4 import IDLV2Lexer, IDLV2Parser, IDLV2Visitor
 
-# Add taidl to path for template system
-taidl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'taidl')
-sys.path.insert(0, taidl_path)
-
-from IDLV2Lexer import IDLV2Lexer
-from IDLV2Parser import IDLV2Parser
-from IDLV2Visitor import IDLV2Visitor
-from template import generate_code, templates, init_templates
+from .template import generate_code, templates, init_templates
 
 
 class IdlVisitor(IDLV2Visitor):
@@ -24,7 +13,6 @@ class IdlVisitor(IDLV2Visitor):
         self.instruction_lines = []
         init_templates()
 
-        # Map HLO operation names to template names
         self.op_to_template = {
             'reshape': 'RESHAPE',
             'convert': 'CONVERT',
@@ -50,7 +38,6 @@ class IdlVisitor(IDLV2Visitor):
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
         if ctx.ROOT():
-            # Do nothing for now
             pass
 
         lhs_name = ctx.IDENTIFIER().getText().lstrip('%')
@@ -58,11 +45,9 @@ class IdlVisitor(IDLV2Visitor):
         lhs_type, lhs_shape = result_type_info
         op_name = ctx.OPERATION().getText()
 
-        # Skip parameter() instructions - they're handled by set_inputs()
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
 
-        # Collect operand names
         operand_names = []
         if ctx.operands():
             operand_info = self.visit(ctx.operands())
@@ -72,54 +57,45 @@ class IdlVisitor(IDLV2Visitor):
                 else:
                     operand_names.append(operand_value)
 
-        # Collect attributes
         attributes = {}
         if ctx.attributes():
             attribute_info = self.visit(ctx.attributes())
             for attr_name, attr_value, attr_type in attribute_info:
                 if attr_type == 'BRACELIST':
-                    # Extract list of values
                     values = [v['value'] for v in attr_value]
                     attributes[attr_name] = values
                 else:
                     attributes[attr_name] = attr_value
 
-        # Generate code using template
         template_name = self.op_to_template[op_name]
         self._generate_from_template(template_name, op_name, lhs_name, lhs_type, lhs_shape,
                                      operand_names, attributes)
 
-        # Store the generated line in lvars for potential reuse
         self.instruction_lines.append(f"lvars['{lhs_name}'] = lhs_loc")
 
         return (lhs_name, lhs_type, lhs_shape)
 
     def _generate_from_template(self, template_name, op_name, lhs_name, lhs_type, lhs_shape,
                                 operand_names, attributes):
-        """Generate code using templates"""
         mapping = {
             "lhs": f'"{lhs_name}"',
             "type": f'"{lhs_type}"',
             "size": f'[{lhs_shape}]'
         }
 
-        # Single operand operations
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
             if len(operand_names) > 0:
                 mapping["in"] = f'"{operand_names[0]}"'
 
-        # Two operand operations
         elif template_name in ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'MAXIMUM', 'MINIMUM', 'XOR']:
             if len(operand_names) >= 2:
                 mapping["A"] = f'"{operand_names[0]}"'
                 mapping["B"] = f'"{operand_names[1]}"'
 
-        # BROADCAST
         elif template_name == 'BROADCAST':
             if len(operand_names) > 0:
                 mapping["A"] = f'"{operand_names[0]}"'
 
-        # TRANSPOSE
         elif template_name == 'TRANSPOSE':
             if len(operand_names) > 0:
                 mapping["in"] = f'"{operand_names[0]}"'
@@ -130,12 +106,11 @@ class IdlVisitor(IDLV2Visitor):
                 else:
                     mapping["dims"] = str(dims)
 
-        # DOT
         elif template_name == 'DOT':
             if len(operand_names) >= 2:
                 mapping["A"] = f'"{operand_names[0]}"'
                 mapping["B"] = f'"{operand_names[1]}"'
-            # Extract dot dimensions from attributes
+
             def format_dims(value):
                 if isinstance(value, list):
                     return '{' + ', '.join(str(v) for v in value) + '}'
@@ -149,11 +124,9 @@ class IdlVisitor(IDLV2Visitor):
             mapping["rb"] = format_dims(attributes.get('rhs_batch_dims', []))
             mapping["rc"] = format_dims(attributes.get('rhs_contracting_dims', [0]))
 
-        # REDUCE
         elif template_name == 'REDUCE_ADD':
             assert(len(operand_names) == 1)
             mapping["A"] = f'"{operand_names[0]}"'
-            #mapping["B"] = f'"{operand_names[1]}"'
             if 'dimensions' in attributes:
                 dims = attributes['dimensions']
                 if isinstance(dims, list):
@@ -163,17 +136,12 @@ class IdlVisitor(IDLV2Visitor):
             else:
                 mapping["dims"] = '{}'
             mapping["to_apply"] = f'"%add_{lhs_type}"'
-
-            # Use same reduce template for everything
             template_name = "REDUCE"
 
-        # Generate code from template
         template_code = generate_code(templates[template_name], mapping)
 
-        # Add each line to instruction_lines
         for line in template_code.strip().split('\n'):
             self.instruction_lines.append(line)
-
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.IDENTIFIER().getText()
@@ -186,7 +154,6 @@ class IdlVisitor(IDLV2Visitor):
         for attribute_ctx in ctx.attribute():
             attr_info = self.visit(attribute_ctx)
             attributes_list.append(attr_info)
-
         return attributes_list
 
     def visitAttributeValue(self, ctx: IDLV2Parser.AttributeValueContext):
@@ -216,7 +183,6 @@ class IdlVisitor(IDLV2Visitor):
             for value_ctx in ctx.value():
                 value_text = value_ctx.getText()
 
-                # Determine the type of each value in the braceList
                 if value_ctx.INT():
                     value_type = 'INT'
                 elif value_ctx.IDENTIFIER():
@@ -234,14 +200,12 @@ class IdlVisitor(IDLV2Visitor):
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
         shape_info = self.visit(ctx.shape())
         shape_dims, shape_type = shape_info
-
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
         dims = ctx.getText()
         dims = dims.replace("`", "'")
         typ = ctx.parentCtx.TYPE().getText()
-
         return (dims, typ)
 
     def visitOperands(self, ctx: IDLV2Parser.OperandsContext):

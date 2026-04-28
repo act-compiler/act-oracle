@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taidl-to"
+version = "2.0.0"
+description = "TAIDL-TO: Test Oracle Generator for Tensor Accelerator ISAs"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "ACT Compiler Team"},
+]
+readme = "README.md"
+dependencies = [
+    "taidl @ git+https://github.com/act-compiler/taidl.git@v2.1",
+]
+
+[project.optional-dependencies]
+runtime = ["numpy", "jax"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"taidl_to.templates" = ["*.txt"]
+"taidl_to.generic" = ["*.py"]
+"taidl_to.xla-debug" = ["*"]
