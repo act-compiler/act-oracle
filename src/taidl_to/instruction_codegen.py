@@ -107,7 +107,7 @@ def generate_api_function(instruction: Instruction) -> str:
     fsim = "pass"
 
     inputs = generate_inputs(instruction)
-    semantics = generate_semantic_code(instruction.instr_semantics)
+    semantics = generate_semantic_code(instruction.instr_semantics_ast)
     outputs = generate_outputs(instruction)
 
     parts = []
@@ -140,7 +140,7 @@ def generate_api_function(instruction: Instruction) -> str:
 def generate_semantic_function(instruction: Instruction) -> str:
     """Generate the semantic function for an instruction"""
     inputs = generate_inputs(instruction)
-    semantics = generate_semantic_code(instruction.instr_semantics)
+    semantics = generate_semantic_code(instruction.instr_semantics_ast)
     outputs = generate_outputs(instruction)
 
     output = f'\ndef {instruction.instruction}_semantics(attrs, state, global_counters):\n'

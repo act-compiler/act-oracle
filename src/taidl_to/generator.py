@@ -21,10 +21,10 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
 
     Args:
         accelerator: TAIDL Accelerator object
-        base_dir: Base directory of the project. Defaults to cwd.
+        base_dir: Base directory of the project. Defaults to accelerator.base_dir.
     """
     if base_dir is None:
-        base_dir = os.getcwd()
+        base_dir = accelerator.base_dir
 
     # Setup directories
     top_gen_directory = os.path.join(base_dir, 'targets', accelerator.name)

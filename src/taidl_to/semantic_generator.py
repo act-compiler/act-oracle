@@ -1,15 +1,16 @@
 """Semantic code generator using ANTLR4 parsing"""
 
-from .idl_visitor import parse_idl
+from .oracle_visitor import OracleVisitor
 
 
-def generate_semantic_code(semantics_text: str) -> str:
-    if not semantics_text or not semantics_text.strip():
+def generate_semantic_code(ast) -> str:
+    if ast is None:
         return "\tpass"
 
-    instruction_lines = parse_idl(semantics_text)
+    visitor = OracleVisitor()
+    visitor.visit(ast)
 
-    code_lines = [line for line in instruction_lines if line != "Module:"]
+    code_lines = [line for line in visitor.instruction_lines if line != "Module:"]
 
     indented_lines = ["\t" + line for line in code_lines]
 
