@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taidl-to"
-version = "2.0.0"
+version = "2.1"
 description = "TAIDL-TO: Test Oracle Generator for Tensor Accelerator ISAs"
 requires-python = ">=3.10"
 license = "Apache-2.0"
