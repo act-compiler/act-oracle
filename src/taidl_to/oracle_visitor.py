@@ -1,13 +1,11 @@
 """ANTLR4-based visitor for parsing TAIDL semantics into HLO generation code"""
 
-from antlr4 import CommonTokenStream, InputStream
-
-from taidl.antlr4 import IDLV2Lexer, IDLV2Parser, IDLV2Visitor
+from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .template import generate_code, templates, init_templates
 
 
-class IdlVisitor(IDLV2Visitor):
+class OracleVisitor(IDLV2Visitor):
     def __init__(self) -> None:
         super().__init__()
         self.instruction_lines = []
@@ -229,15 +227,3 @@ class IdlVisitor(IDLV2Visitor):
             operand_type = 'UNKNOWN'
 
         return (value_text, operand_type)
-
-
-def parse_idl(text):
-    input_stream = InputStream(text)
-    lexer = IDLV2Lexer(input_stream)
-    stream = CommonTokenStream(lexer)
-    parser = IDLV2Parser(stream)
-    tree = parser.module()
-
-    visitor = IdlVisitor()
-    visitor.visit(tree)
-    return visitor.instruction_lines
