@@ -96,6 +96,14 @@ class OracleVisitor(IDLV2Visitor):
         elif template_name == 'BROADCAST':
             if len(operand_names) > 0:
                 mapping["A"] = f'"{operand_names[0]}"'
+            # broadcast maps operand dims by position; keep the spec's order
+            if 'dimensions' not in attributes:
+                raise ValueError(f"{self.entry_name}: broadcast '%{lhs_name}' has no dimensions")
+            dims = attributes['dimensions']
+            if isinstance(dims, list):
+                mapping["dims"] = ", ".join(str(d) for d in dims)
+            else:
+                mapping["dims"] = str(dims)
 
         elif template_name == 'TRANSPOSE':
             if len(operand_names) > 0:

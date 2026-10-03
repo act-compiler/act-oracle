@@ -52,6 +52,32 @@ ENTRY sum_{t} {{
 }}
 """)
 
+# Broadcasts of a bf16 input, with what each must produce
+BROADCASTS = {
+    "bcast_rows": ("""%r = bf16[64] reduce_add(%x), dimensions={1};
+    %y = bf16[64,64] broadcast(%r), dimensions={0};""",
+                   lambda x: np.broadcast_to(x.sum(axis=1)[:, None], x.shape)),
+    "bcast_cols": ("""%r = bf16[64] reduce_add(%x), dimensions={0};
+    %y = bf16[64,64] broadcast(%r), dimensions={1};""",
+                   lambda x: np.broadcast_to(x.sum(axis=0)[None, :], x.shape)),
+    "bcast_transpose": ("""%y = bf16[64,64] broadcast(%x), dimensions={1,0};""",
+                        lambda x: x.T),
+}
+for name, (body, _) in BROADCASTS.items():
+    instr = ops.add_instruction(name, [], ["addr_in", "addr_out"])
+    instr.set_inputs([["d0", ["@a.addr_in"], ["8192"]]])
+    instr.set_outputs([["d0", ["@a.addr_out"], ["8192"]]])
+    instr.add_semantics(f"""
+ENTRY {name} {{
+    %In1 = u8[8192] parameter(0);
+    %a = u8[64,64,2] reshape(%In1);
+    %x = bf16[64,64] bitcast_convert(%a);
+    {body}
+    %b = u8[64,64,2] bitcast_convert(%y);
+    ROOT %Out0 = u8[8192] reshape(%b);
+}}
+""")
+
 generate_oracle(ops)
 sys.path.insert(0, os.path.join(ops.base_dir, "targets", "OPS"))
 decorator = importlib.import_module("oracle.decorator")
@@ -119,4 +145,26 @@ ENTRY refused {{
 }}
 """)
     with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
+        generate_oracle(acc)
+
+
+@pytest.mark.parametrize("name", BROADCASTS)
+def test_broadcast_dimensions(name):
+    x = small_ints((64, 64))
+    out = run(name, [x], (64, 64), jnp.bfloat16)
+    np.testing.assert_array_equal(out, BROADCASTS[name][1](np.asarray(x, np.float64)))
+
+
+def test_broadcast_without_dimensions_refused():
+    acc = Accelerator("NODIMS", base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction("nodims", [], ["addr"])
+    instr.set_inputs([["d0", ["@a.addr"], ["2"]]])
+    instr.set_outputs([["d0", ["@a.addr"], ["2"]]])
+    instr.add_semantics("""
+ENTRY nodims {
+    %In1 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] broadcast(%In1);
+}
+""")
+    with pytest.raises(ValueError, match="nodims: broadcast '%Out0' has no dimensions"):
         generate_oracle(acc)

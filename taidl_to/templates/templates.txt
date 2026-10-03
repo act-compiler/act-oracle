@@ -426,8 +426,8 @@ output.append(line)
 ### TEMPLATE: BROADCAST ###
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = create_num_str({{size}})
-line = f"{lhs_loc} = {lhs_type} broadcast({b_loc}), dimensions={dim}"
+dims = "{{{dims}}}"
+line = f"{lhs_loc} = {lhs_type} broadcast({b_loc}), dimensions={dims}"
 output.append(line)
 
 ### TEMPLATE: BROADCAST_DIM ###
