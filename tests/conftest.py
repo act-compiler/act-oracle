@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 
 import numpy as np
+import ml_dtypes
 import jax
 import jax.numpy as jnp
 
@@ -73,3 +74,16 @@ def load_golden(data_dir, kernel_name):
         goldens = json.load(f)
     name, record = next((n, r) for n, r in goldens.items() if kernel_name in r["kernels"])
     return load_bf16_matrix(os.path.join(data_dir, name), (64, 64)), record
+
+
+def attention_reference(data_dir):
+    """Return softmax(Q K^T) V in numpy, rounded to bf16 where the spec rounds, and its tolerance"""
+    Q, K, V = (np.fromfile(os.path.join(data_dir, f"{n}.dat"), dtype=ml_dtypes.bfloat16)
+               .reshape(64, 64).astype(np.float64) for n in "QKV")
+    bf16 = lambda x: x.astype(ml_dtypes.bfloat16).astype(np.float64)
+    S = bf16(Q @ K.T)
+    E = bf16(np.exp(S))
+    P = bf16(E / bf16(E.sum(axis=1, keepdims=True)))
+    # Two bf16 ulps at max|V|, which bounds every output
+    tol = 2 * 2.0 ** (np.floor(np.log2(np.abs(V).max())) - 7)
+    return bf16(P @ V), tol

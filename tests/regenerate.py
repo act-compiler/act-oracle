@@ -14,7 +14,7 @@ import jax
 import jaxlib
 import numpy as np
 
-from conftest import generate_and_import_oracle, run_kernel
+from conftest import generate_and_import_oracle, run_kernel, attention_reference
 
 if __name__ == "__main__":
     example_dir = os.path.abspath(sys.argv[1])
@@ -25,6 +25,7 @@ if __name__ == "__main__":
 
     kernel, api = generate_and_import_oracle(example_dir)
     backend = importlib.import_module("oracle.decorator").backend
+    reference, tol = attention_reference(data_dir)
 
     for name, record in goldens.items():
         outputs = [np.asarray(run_kernel(kernel, api, k, assembly_dir, data_dir))
@@ -33,10 +34,13 @@ if __name__ == "__main__":
         for k, output in zip(record["kernels"], outputs):
             assert output.tobytes() == outputs[0].tobytes(), \
                 f"{k} differs from {record['kernels'][0]}; give it a golden of its own"
+        # Never write a golden the reference rejects
+        max_diff = np.max(np.abs(outputs[0].astype(np.float64) - reference))
+        assert max_diff <= tol, f"{name} is {max_diff} from the reference, beyond {tol}"
         outputs[0].tofile(os.path.join(data_dir, name))
         record.update(jax=jax.__version__, jaxlib=jaxlib.__version__,
                       platform=backend.platform, machine=platform.machine())
-        print(f"Wrote {name} for {', '.join(record['kernels'])}")
+        print(f"Wrote {name} for {', '.join(record['kernels'])}, {max_diff} from the reference")
 
     with open(os.path.join(data_dir, "goldens.json"), "w") as f:
         json.dump(goldens, f, indent=2)
