@@ -99,3 +99,24 @@ def test_reduce_add_types(t):
     x = jnp.asarray(rng.integers(0, 2, (64, 64)), dtype=TYPES[t])
     out = run(f"sum_{t}", [x], (64,), TYPES[t])
     np.testing.assert_array_equal(out, np.asarray(x, np.float64).sum(axis=1))
+
+
+# Words the grammar lexes that no template lowers
+UNMAPPED = ["exp", "concatenate", "slice", "constant", "select_lt", "select_eq_var",
+            "dynamic_update_slice", "reduce"]
+
+
+@pytest.mark.parametrize("op", UNMAPPED)
+def test_unmapped_operation_refused(op):
+    acc = Accelerator("REFUSED", base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction("refused", [], ["addr"])
+    instr.set_inputs([["d0", ["@a.addr"], ["2"]]])
+    instr.set_outputs([["d0", ["@a.addr"], ["2"]]])
+    instr.add_semantics(f"""
+ENTRY refused {{
+    %In1 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] {op}(%In1);
+}}
+""")
+    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
+        generate_oracle(acc)
