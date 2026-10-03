@@ -109,13 +109,12 @@ class OracleVisitor(IDLV2Visitor):
                 mapping["A"] = f'"{operand_names[0]}"'
                 mapping["B"] = f'"{operand_names[1]}"'
 
+            # dot pairs dimension lists by position; keep the spec's order
             def format_dims(value):
                 if isinstance(value, list):
-                    return '{' + ', '.join(str(v) for v in value) + '}'
+                    return '"{' + ', '.join(str(v) for v in value) + '}"'
                 elif isinstance(value, str):
                     return value
-                else:
-                    return '{}'
 
             mapping["lb"] = format_dims(attributes.get('lhs_batch_dims', []))
             mapping["lc"] = format_dims(attributes.get('lhs_contracting_dims', [1]))
