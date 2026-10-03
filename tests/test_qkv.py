@@ -2,17 +2,19 @@
 
 import os
 import jax.numpy as jnp
-from conftest import EXAMPLES_DIR, generate_and_import_oracle, run_kernel
+from conftest import EXAMPLES_DIR, generate_and_import_oracle, run_kernel, load_golden
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, "QKV")
 kernel, api = generate_and_import_oracle(QKV_DIR)
 
 
 def test_attention():
-    max_diff = run_kernel(kernel, api, "attention",
-                          os.path.join(QKV_DIR, "assembly"),
-                          os.path.join(QKV_DIR, "data"))
-    assert max_diff == 0, f"Max diff: {max_diff}"
+    output = run_kernel(kernel, api, "attention",
+                        os.path.join(QKV_DIR, "assembly"),
+                        os.path.join(QKV_DIR, "data"))
+    golden, record = load_golden(os.path.join(QKV_DIR, "data"), "attention")
+    max_diff = float(jnp.max(jnp.abs(output - golden)))
+    assert max_diff == 0, f"Max diff: {max_diff} (golden from jax {record['jax']} on {record['platform']} {record['machine']})"
 
 
 def test_identity():

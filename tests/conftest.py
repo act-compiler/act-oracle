@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 import shutil
 import tempfile
 import importlib
@@ -52,7 +53,7 @@ def generate_and_import_oracle(example_dir):
 
 
 def run_kernel(kernel, api, kernel_module_name, assembly_dir, data_dir):
-    """Run a kernel and return max diff against golden"""
+    """Run a kernel on the example's Q, K, V and return its output"""
     sys.path.insert(0, assembly_dir)
     kernel_module = importlib.import_module(kernel_module_name)
     qkv_kernel = kernel_module.qkv(kernel, api)
@@ -63,6 +64,12 @@ def run_kernel(kernel, api, kernel_module_name, assembly_dir, data_dir):
     V = load_bf16_matrix(os.path.join(data_dir, "V.dat"), (64, 64))
 
     outputs, _ = qkv_kernel('fsim')(Q, K, V)
-    golden = load_bf16_matrix(os.path.join(data_dir, "attention.dat"), (64, 64))
+    return outputs[0]
 
-    return float(jnp.max(jnp.abs(outputs[0] - golden)))
+
+def load_golden(data_dir, kernel_name):
+    """Return a kernel's golden and the record of where it came from"""
+    with open(os.path.join(data_dir, "goldens.json")) as f:
+        goldens = json.load(f)
+    name, record = next((n, r) for n, r in goldens.items() if kernel_name in r["kernels"])
+    return load_bf16_matrix(os.path.join(data_dir, name), (64, 64)), record
