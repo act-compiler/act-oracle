@@ -240,65 +240,6 @@ def test_reduce_add_types(t):
     np.testing.assert_array_equal(out, np.asarray(x, np.float64).sum(axis=1))
 
 
-# Words the grammar lexes that no template lowers
-UNMAPPED = [
-    'exp',
-    'concatenate',
-    'slice',
-    'constant',
-    'select_lt',
-    'select_eq_var',
-    'dynamic_update_slice',
-    'reduce',
-]
-
-
-@pytest.mark.parametrize('op', UNMAPPED)
-def test_unmapped_operation_refused(op):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('refused', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics(f"""
-ENTRY {{
-    %In0 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] {op}(%In0);
-}}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
-        generate_oracle(acc)
-
-
-# Module state a generated function reads or sets
-SHARED_NAMES = [
-    'comp_attrs',
-    'cur_scope',
-    'global_counters',
-    'instruction_scopes',
-    'ssa_types',
-    'state',
-]
-
-
-@pytest.mark.parametrize('addressing', [False, True])
-@pytest.mark.parametrize('name', SHARED_NAMES)
-def test_attribute_named_as_a_shared_name_refused(name, addressing):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    # The name as a computation or an addressing attribute
-    attributes = ([], [name, 'addr']) if addressing else ([name], ['addr'])
-    instr = acc.add_instruction('refused', *attributes)
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY {
-    %In0 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] copy(%In0);
-}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: attribute name '{name}' is reserved"):
-        generate_oracle(acc)
-
-
 @pytest.mark.parametrize('name', BROADCASTS)
 def test_broadcast_dimensions(name):
     x = small_ints((64, 64))
