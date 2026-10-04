@@ -158,7 +158,7 @@ class OracleVisitor(IDLV2Visitor):
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.IDENTIFIER().getText()
-        attr_value_info = self.visit(ctx.attributeValue())
+        attr_value_info = self.visit(ctx.attribute_value())
         attr_value, attr_type = attr_value_info
         return (attr_name, attr_value, attr_type)
 
@@ -169,9 +169,9 @@ class OracleVisitor(IDLV2Visitor):
             attributes_list.append(attr_info)
         return attributes_list
 
-    def visitAttributeValue(self, ctx: IDLV2Parser.AttributeValueContext):
-        if ctx.braceList():
-            brace_info = self.visit(ctx.braceList())
+    def visitAttribute_value(self, ctx: IDLV2Parser.Attribute_valueContext):
+        if ctx.brace_list():
+            brace_info = self.visit(ctx.brace_list())
             return (brace_info, 'BRACELIST')
         elif ctx.value():
             value_ctx = ctx.value()
@@ -188,7 +188,7 @@ class OracleVisitor(IDLV2Visitor):
         else:
             return ('', 'UNKNOWN')
 
-    def visitBraceList(self, ctx: IDLV2Parser.BraceListContext):
+    def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
         if ctx.value():
             values = []
             for value_ctx in ctx.value():
