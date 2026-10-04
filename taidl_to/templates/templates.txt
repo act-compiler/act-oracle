@@ -26,20 +26,22 @@ instruction_scopes = defaultdict(list)
 loop_stack = []
 cur_scope = "main"
 
-def generate_module(hbm_size: int):
+def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list):
 	if loop_stack:
 		raise ValueError(f"loop {loop_stack[-1]['var']} has no end_loop")
 	_, prologue = semantic_init(hbm_size)
-	hbm_type = ssa_types['%d0.0']
+	params, marshal = kernel_prologue(hbm_size, inputs, constants)
+	epilogue, results, result_types = kernel_epilogue(f"%d0.{global_counters['d0']['counter']}", outputs, ssa_types)
+	returned = f" {', '.join(results)} : {', '.join(result_types)}" if results else ""
 	module = "module @compiled {\n"
 
-	module += f"func.func public @main(%d0.0: {hbm_type}) -> {hbm_type} "
+	module += f"func.func public @main({', '.join(params)}) -> ({', '.join(result_types)}) "
 	module += "{\n"
-	for line in prologue:
+	for line in marshal + prologue:
 		module += "\t" + line + "\n"
-	for line in instruction_scopes["main"]:
+	for line in instruction_scopes["main"] + epilogue:
 		module += "\t" + line + "\n"
-	module += f"\treturn %d0.{global_counters['d0']['counter']} : {hbm_type}\n"
+	module += f"\treturn{returned}\n"
 	module+= "}\n}\n"
 
 	return module

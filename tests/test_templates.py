@@ -125,6 +125,18 @@ ENTRY store_d1 {
 }
 """)
 
+# A value named out, as the kernel's outputs are
+instr = ops.add_instruction("named_out", [], ["addr_in", "addr_out"])
+instr.set_inputs([["d0", ["@a.addr_in"], ["8192"]]])
+instr.set_outputs([["d0", ["@a.addr_out"], ["8192"]]])
+instr.add_semantics("""
+ENTRY named_out {
+    %In1 = u8[8192] parameter(0);
+    %out = u8[8192] copy(%In1);
+    ROOT %Out0 = u8[8192] copy(%out);
+}
+""")
+
 generate_oracle(ops)
 sys.path.insert(0, os.path.join(ops.base_dir, "targets", "OPS"))
 decorator = importlib.import_module("oracle.decorator")
@@ -190,6 +202,12 @@ def test_integer_buffer_starts_at_zero():
     k('fsim-compile')()
     outputs, _ = k('fsim')(jnp.ones((64, 64), jnp.int32))
     np.testing.assert_array_equal(np.asarray(outputs[0]), np.zeros((64, 64)))
+
+
+def test_value_named_out():
+    x = small_ints((64, 64))
+    out = run("named_out", [x], (64, 64), jnp.bfloat16)
+    np.testing.assert_array_equal(out, np.asarray(x, np.float64))
 
 
 @pytest.mark.parametrize("t", TYPES)

@@ -160,3 +160,27 @@ def test_loop_matches_unrolled(twin):
     unrolled = run_kernel(kernel, api, "attention",
                           os.path.join(QKV_DIR, "assembly"), os.path.join(QKV_DIR, "data"))
     assert np.asarray(outputs[0]).tobytes() == np.asarray(unrolled).tobytes()
+
+
+# Two 8192-byte inputs that overlap or run past HBM
+@pytest.mark.parametrize("second, error", [(4096, "overlap"), (12288, "run past HBM")])
+def test_input_layout_refused(second, error):
+    @kernel(hbm=16384, input=[INPUT[0], dict(INPUT[1], addr=second)], constant=[], output=[dict(OUTPUT[0], addr=0)])
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+
+    with pytest.raises(ValueError, match=error):
+        k('fsim-compile')()
+
+
+def test_constant_reaches_hbm():
+    V = load_qkv()[2]
+
+    @kernel(hbm=16384, input=[], constant=[dict(INPUT[0], value=V)], output=[dict(OUTPUT[0], addr=8192)])
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=8192)
+
+    k('fsim-compile')()
+    outputs, _ = k('fsim')()
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(V).tobytes()
