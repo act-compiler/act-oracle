@@ -206,3 +206,133 @@ def dot_helper(lhs_loc, lhs_type, rhs_loc_A, rhs_loc_B, lhs_batch, lhs_contracti
     line += f'lhs_batch_dims={lhs_batch}, lhs_contracting_dims={lhs_contracting}, '
     line += f'rhs_batch_dims={rhs_batch}, rhs_contracting_dims={rhs_contracting}'
     return line
+
+
+# Each sh_* helper records its result's MLIR type in ssa_types
+MLIR_ELEM_TYPE = {"f64": "f64", "f32": "f32", "f16": "f16", "bf16": "bf16",
+              "u8": "ui8", "u16": "ui16", "u32": "ui32", "u64": "ui64",
+              "s8": "i8", "s16": "i16", "s32": "i32", "s64": "i64", "pred": "i1"}
+
+
+def mlir_type(xla_type):
+    """bf16[64,64] -> tensor<64x64xbf16>, f32[] -> tensor<f32>"""
+    base, dims = xla_type.split('[', 1)
+    dims = dims.split(']', 1)[0].replace(' ', '')
+    return "tensor<" + "".join(f"{d}x" for d in dims.split(',') if d) + MLIR_ELEM_TYPE[base.strip()] + ">"
+
+
+def mlir_elem(mlir_t):
+    return mlir_t[len("tensor<"):-1].rsplit('x', 1)[-1]
+
+
+def mlir_zero(mlir_t):
+    return "0.0" if mlir_elem(mlir_t) in ("f64", "f32", "f16", "bf16") else "0"
+
+
+def dims_list(dims):
+    """{1, 0} as text, a set or {} -> [1, 0], keeping a text's order"""
+    if isinstance(dims, (set, dict)):
+        return str(sorted(dims))
+    return "[" + ", ".join(d.strip() for d in dims.strip("{} ").split(',') if d.strip()) + "]"
+
+
+def sh_zeros(lhs, xla_type, ssa_types):
+    t = mlir_type(xla_type)
+    ssa_types[lhs] = t
+    return f"{lhs} = stablehlo.constant dense<{mlir_zero(t)}> : {t}"
+
+
+def sh_unary(op, lhs, lhs_type, x, ssa_types):
+    t = mlir_type(lhs_type)
+    ssa_types[lhs] = t
+    return f"{lhs} = stablehlo.{op} {x} : {t}"
+
+
+def sh_binary(op, lhs, lhs_type, a, b, ssa_types):
+    t = mlir_type(lhs_type)
+    ssa_types[lhs] = t
+    return f"{lhs} = stablehlo.{op} {a}, {b} : {t}"
+
+
+def sh_cast(op, lhs, lhs_type, x, ssa_types):
+    t = mlir_type(lhs_type)
+    line = f"{lhs} = stablehlo.{op} {x} : ({ssa_types[x]}) -> {t}"
+    ssa_types[lhs] = t
+    return line
+
+
+def sh_copy(lhs, lhs_type, x, ssa_types):
+    """copy keeps its operand's type: an identity reshape"""
+    t = mlir_type(lhs_type)
+    if ssa_types[x] != t:
+        raise ValueError(f"copy of {x} : {ssa_types[x]} does not have the result type {t}")
+    ssa_types[lhs] = t
+    return f"{lhs} = stablehlo.reshape {x} : ({t}) -> {t}"
+
+
+def sh_transpose(lhs, lhs_type, x, dims, ssa_types):
+    t = mlir_type(lhs_type)
+    line = f"{lhs} = stablehlo.transpose {x}, dims = {dims_list(dims)} : ({ssa_types[x]}) -> {t}"
+    ssa_types[lhs] = t
+    return line
+
+
+def sh_broadcast(lhs, lhs_type, x, dims, ssa_types):
+    t = mlir_type(lhs_type)
+    line = f"{lhs} = stablehlo.broadcast_in_dim {x}, dims = {dims_list(dims)} : ({ssa_types[x]}) -> {t}"
+    ssa_types[lhs] = t
+    return line
+
+
+def sh_dot(lhs, lhs_type, a, b, lhs_batch, lhs_contracting, rhs_batch, rhs_contracting, ssa_types):
+    t = mlir_type(lhs_type)
+    lb, rb = dims_list(lhs_batch), dims_list(rhs_batch)
+    batching = f"batching_dims = {lb} x {rb}, " if lb != "[]" or rb != "[]" else ""
+    line = (f"{lhs} = stablehlo.dot_general {a}, {b}, {batching}"
+            f"contracting_dims = {dims_list(lhs_contracting)} x {dims_list(rhs_contracting)} : "
+            f"({ssa_types[a]}, {ssa_types[b]}) -> {t}")
+    ssa_types[lhs] = t
+    return line
+
+
+def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
+    t = mlir_type(lhs_type)
+    scalar_t = f"tensor<{mlir_elem(t)}>"
+    lines = [f"{lhs}.init = stablehlo.constant dense<{mlir_zero(scalar_t)}> : {scalar_t}",
+             f"{lhs} = stablehlo.reduce({x} init: {lhs}.init) applies stablehlo.{op} "
+             f"across dimensions = {dims_list(dims)} : ({ssa_types[x]}, {scalar_t}) -> {t}"]
+    ssa_types[lhs] = t
+    return "\n\t".join(lines)
+
+
+def index_constants(lhs, starts):
+    """One tensor<i64> constant per literal index; a loop expression passes through"""
+    lines, locs = [], []
+    for k, s in enumerate(starts):
+        if '%' in s:
+            locs.append(s)
+        else:
+            locs.append(f"{lhs}.i{k}")
+            lines.append(f"{locs[-1]} = stablehlo.constant dense<{int(s)}> : tensor<i64>")
+    return lines, locs
+
+
+def sh_slice_load(lhs, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, consts, ssa_types):
+    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
+    lines, locs = index_constants(lhs, [simplify(sc) for sc in slice_configs])
+    t = mlir_type(lhs_type)
+    sizes = lhs_type.split('[', 1)[1].split(']')[0]
+    lines.append(f"{lhs} = stablehlo.dynamic_slice {', '.join([rhs_loc] + locs)}, sizes = [{sizes}] : "
+                 f"({', '.join([ssa_types[rhs_loc]] + ['tensor<i64>'] * len(locs))}) -> {t}")
+    ssa_types[lhs] = t
+    return "\n\t".join(lines)
+
+
+def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices, attrs, state, lvars, consts, ssa_types):
+    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
+    lines, locs = index_constants(lhs_loc, list(map(simplify, start_indices)))
+    t = mlir_type(lhs_type)
+    lines.append(f"{lhs_loc} = stablehlo.dynamic_update_slice {', '.join([rhs_loc, rhs_update] + locs)} : "
+                 f"({', '.join([ssa_types[rhs_loc], ssa_types[rhs_update]] + ['tensor<i64>'] * len(locs))}) -> {t}")
+    ssa_types[lhs_loc] = t
+    return lines
