@@ -38,7 +38,8 @@ def compile_module(module: str):
     # The debug handler, on each platform it was built for
     for platform, targets in print_handler_ext.registrations().items():
         for name, target in targets.items():
-            ffi.register_ffi_target(name, target, platform=platform)
+            # Named after this package, so each oracle registers its own
+            ffi.register_ffi_target(f"{__package__}.{name}", target, platform=platform)
 
     options = get_compile_options(num_replicas=1, num_partitions=1)
     device = backend.devices()[0]
