@@ -1,6 +1,7 @@
 """Test the kernel API of the generated oracle"""
 
 import os
+import sys
 import glob
 import time
 
@@ -31,6 +32,15 @@ def test_unknown_mode_refused(mode):
 
     with pytest.raises(ValueError, match=f"unknown oracle mode '{mode}'"):
         k(mode)
+
+
+@pytest.mark.parametrize("platform", ["cpu", "gpu", "TPU"])
+def test_unknown_platform_refused(platform):
+    decorator = sys.modules[kernel.__module__]
+    with pytest.raises(ValueError, match=f"unknown simulation platform '{platform}'"):
+        decorator.set_simulation_backend(platform)
+    # The refused name leaves the backend as it was
+    assert decorator.backend.platform == PLATFORM.lower()
 
 
 def test_debug_prints_values(capfd):
