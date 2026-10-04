@@ -44,7 +44,6 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
     generate_api_file(
         oracle_gen_dir,
         accelerator.instructions,
-        accelerator.constants,
         accelerator.state,
         accelerator.data_model,
     )

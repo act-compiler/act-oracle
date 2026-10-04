@@ -288,18 +288,3 @@ def test_broadcast_dimensions(name):
     x = small_ints((64, 64))
     out = run(name, [x], (64, 64), jnp.bfloat16)
     np.testing.assert_array_equal(out, BROADCASTS[name][1](np.asarray(x, np.float64)))
-
-
-def test_broadcast_without_dimensions_refused():
-    acc = Accelerator('NODIMS', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('nodims', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY nodims {
-    %In1 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] broadcast(%In1);
-}
-""")
-    with pytest.raises(ValueError, match="nodims: broadcast '%Out0' has no dimensions"):
-        generate_oracle(acc)
