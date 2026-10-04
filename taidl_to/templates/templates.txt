@@ -59,7 +59,6 @@ global_counters = None
 executable = None
 
 mode = None
-total_cost = 0
 instruction_scopes = defaultdict(list)
 
 loop_variables = ["main"]
@@ -169,7 +168,7 @@ def end_loop():
 			cur_ind += 1
 
 def debug(prefix: str, data: str) -> None:
-	global total_cost, instruction_scopes, cur_scope, comp_attrs, state, global_counters
+	global instruction_scopes, cur_scope, comp_attrs, state, global_counters
 	attrs = {}
 	
 	if mode == 'fsim-compile':
@@ -225,7 +224,7 @@ def debug(prefix: str, data: str) -> None:
 		global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: API_FUNC ###
-global total_cost, instruction_scopes, cur_scope, comp_attrs, state, global_counters
+global instruction_scopes, cur_scope, comp_attrs, state, global_counters
 global_counters['loop_counter'] = 0
 comp_attrs = {
 {{set_comp_attr}}
@@ -255,9 +254,6 @@ elif mode == 'fsim-compile':
 {{fsim_compile}}
 	instruction_scopes[cur_scope] += (output)
 	global_counters['instruction_counter'] += 1
-elif mode == 'cost':
-	cost = {{cost}}
-	total_cost += cost
 else:
 	print(f'{{func_name}}({{attributes}})')
 	print([{{attributes}}])

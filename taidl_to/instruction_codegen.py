@@ -102,7 +102,6 @@ def generate_api_function(instruction: Instruction) -> str:
     update = ""
     for line in instruction.update:
         update += '\n' + line
-    cost = instruction.cost
     fsim = "pass"
 
     inputs = generate_inputs(instruction)
@@ -122,7 +121,6 @@ def generate_api_function(instruction: Instruction) -> str:
         "attributes": attr_list,
         "func_name": func_name,
         "update": update,
-        "cost": cost,
         "constraints": constraints,
         "fsim": fsim,
         "fsim_compile": fsim_compile,
