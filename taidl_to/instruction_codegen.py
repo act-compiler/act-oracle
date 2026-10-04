@@ -1,8 +1,4 @@
-"""Code generation methods for Instruction objects.
-
-These were originally on the Instruction class in TAIDL but belong to the oracle
-since they produce oracle-specific output (HLO simulation code).
-"""
+"""Code generation of each instruction's API function, which traces its StableHLO"""
 
 from taidl import Instruction
 
@@ -28,11 +24,9 @@ def generate_inputs(instruction: Instruction) -> str:
         for unit_dim in model.unit_dim:
             size_list.append(f"'{unit_dim}'")
 
-        slice_configs = []
-        for start, shape in zip(start_indices, shapes):
-            slice_configs.append(f"'{start}:{start}+{shape}'")
+        slice_configs = [f"'{start}'" for start in start_indices]
         for unit_dim in model.unit_dim:
-            slice_configs.append(f"'0:{unit_dim}'")
+            slice_configs.append("'0'")
 
         mapping = {
             "rhs_name": f"'{buffer_name}'",

@@ -20,8 +20,7 @@ def generate_semantic_init(data_models):
         mapping = {
             "var_name": model.var_name,
             "var_type": model.var_type,
-            "var_dim": dimensions,
-            "var_num": model.num_dim_str
+            "var_dim": dimensions
         }
         counters += generate_code(template_semantic_counter, mapping)
         prologue += generate_code(template_prologue_init, mapping)

@@ -1,4 +1,4 @@
-"""ANTLR4-based visitor for parsing TAIDL semantics into HLO generation code"""
+"""ANTLR4-based visitor turning TAIDL semantics into the code that traces their StableHLO"""
 
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
@@ -139,7 +139,6 @@ class OracleVisitor(IDLV2Visitor):
                     mapping["dims"] = '{' + str(dims) + '}'
             else:
                 mapping["dims"] = '{}'
-            mapping["to_apply"] = f'"%add_{lhs_type}"'
             template_name = "REDUCE"
 
         template_code = generate_code(templates[template_name], mapping)
