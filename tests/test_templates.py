@@ -288,3 +288,11 @@ def test_broadcast_dimensions(name):
     x = small_ints((64, 64))
     out = run(name, [x], (64, 64), jnp.bfloat16)
     np.testing.assert_array_equal(out, BROADCASTS[name][1](np.asarray(x, np.float64)))
+
+
+def test_state_variable_in_the_api():
+    acc = Accelerator('STATE', base_dir=tempfile.mkdtemp())
+    acc.add_initial_state('mode', 3)
+    generate_oracle(acc)
+    with open(os.path.join(acc.base_dir, 'targets', 'STATE', 'oracle', 'api.py')) as file:
+        assert "'mode': 3," in file.read()

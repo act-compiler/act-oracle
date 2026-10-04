@@ -44,8 +44,8 @@ def generate_api_file(oracle_gen_dir: str, instructions, state, data_models) -> 
     semantic_init = generate_semantic_init(data_models)
 
     state_str = ''
-    for constant in state:
-        state_str += "'" + constant.const_name + "': " + str(constant.value) + ',\n'
+    for variable in state:
+        state_str += "'" + variable.name + "': " + str(variable.value) + ',\n'
 
     output = generate_code(
         templates['API_FILE'],
