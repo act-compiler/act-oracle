@@ -44,7 +44,9 @@ def test_debug_prints_values(capfd):
     k('fsim')(Q, K, V)
     # Row 0 of d1, which holds Q
     lines = capfd.readouterr().out.splitlines()
-    values = lines[lines.index("shape: (1, 64)") + 1].strip("[] ").split(",")
+    shape = lines.index("shape: (1, 64)")
+    assert lines[shape - 1] == "d1: "
+    values = lines[shape + 1].strip("[] ").split(",")
     np.testing.assert_allclose([float(v) for v in values], np.asarray(Q[0], np.float64), rtol=1e-5)
 
 
