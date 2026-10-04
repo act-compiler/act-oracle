@@ -27,6 +27,8 @@ loop_stack = []
 cur_scope = "main"
 
 def generate_module(hbm_size: int):
+	if loop_stack:
+		raise ValueError(f"loop {loop_stack[-1]['var']} has no end_loop")
 	_, prologue = semantic_init(hbm_size)
 	hbm_type = ssa_types['%d0.0']
 	module = "module @compiled {\n"
@@ -60,6 +62,8 @@ def start_loop(var_name, start, end):
 
 def end_loop():
 	global cur_scope
+	if not loop_stack:
+		raise ValueError("end_loop has no start_loop")
 	loop = loop_stack.pop()
 	body = instruction_scopes.pop(cur_scope, [])
 	cur_scope = loop['parent']
