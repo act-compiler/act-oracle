@@ -4,8 +4,8 @@ from collections import defaultdict
 
 import jax
 import jax.numpy as jnp
-from jax.lib import xla_bridge, xla_client
-from jax.extend import ffi
+from jax.extend.backend import get_backend, get_compile_options
+from jax import ffi
 
 
 from .build import print_handler_ext
@@ -20,36 +20,27 @@ def set_simulation_backend(platform="CPU"):
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_default_matmul_precision", "highest")
     if platform == "CPU":
-        backend = xla_bridge.get_backend("cpu")
+        backend = get_backend("cpu")
     elif platform == "GPU":
-        backend = xla_bridge.get_backend("gpu")
+        backend = get_backend("gpu")
 
 
 def reset_api():
-    api.loop_variables = ["main"]
+    api.ssa_types = {}
+    api.loop_stack = []
     api.cur_scope = "main"
-    api.compare_function = ""
     api.state = copy.deepcopy(api.default_state)
     api.instruction_scopes = defaultdict(list)
-    api.scope_tuple_count = defaultdict(int)
 
 
-def generate_hlo(hbm: int) -> str:
-    return api.generate_full_hlotext(hbm)
-
-
-def compile_or_load_executable(hlo_str: str):
+def compile_module(module: str):
     for name, target in print_handler_ext.registrations().items():
         ffi.register_ffi_target(name, target)
 
-    hlo_module = xla_client._xla.hlo_module_from_text(hlo_str)
-    hlo_proto = hlo_module.as_serialized_hlo_module_proto()
-    options = xla_client.CompileOptions()
-    computation = xla_client.XlaComputation(hlo_proto)
-    mlir = xla_client._xla.mlir.xla_computation_to_mlir_module(computation)
+    options = get_compile_options(num_replicas=1, num_partitions=1)
 
     start = time.time()
-    executable = backend.compile(mlir, compile_options=options)
+    executable = backend.compile_and_load(module, [backend.devices()[0]], options)
     elapsed = round((time.time() - start) * 1000, 3)
 
     api.executable = executable
@@ -70,11 +61,11 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     return input, api.compile_time
 
                 if mode == 'fsim':
-                    input_hbm = jnp.zeros(hbm, dtype=jnp.int8)
+                    input_hbm = jnp.zeros(hbm, dtype=jnp.uint8)
 
                     for const in constant:
                         const_array = jnp.array(const['value'])
-                        flat = const_array.flatten().view(jnp.int8)
+                        flat = const_array.flatten().view(jnp.uint8)
                         input_hbm = input_hbm.at[const['addr']: const['addr'] + flat.size].set(flat)
 
                     assert len(args) == len(input), "args != input"
@@ -82,14 +73,13 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                         assert arg.shape == spec['shape'], "arg.shape != input.shape"
                         assert arg.dtype == spec['dtype'], "arg.dtype != input.dtype"
                         arg_array = jnp.array(arg)
-                        flat = arg_array.flatten().view(jnp.int8)
+                        flat = arg_array.flatten().view(jnp.uint8)
                         input_hbm = input_hbm.at[spec['addr']: spec['addr'] + flat.size].set(flat)
 
-                    arg = jax.device_put(input_hbm.reshape((1, hbm)),
-                                         device=api.executable.local_devices()[0])
+                    arg = jax.device_put(input_hbm, device=backend.devices()[0])
 
                     start = time.time()
-                    result = api.executable.execute(arg)
+                    result = api.executable.execute([arg])
                     jax.block_until_ready(result)
                     elapsed = round((time.time() - start) * 1000, 3)
 
@@ -113,8 +103,8 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
                 func()
-                hlo = generate_hlo(hbm)
-                api.compile_time = compile_or_load_executable(hlo)
+                module = api.generate_module(hbm)
+                api.compile_time = compile_module(module)
 
             return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
         return launchable
