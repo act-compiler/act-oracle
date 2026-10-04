@@ -146,6 +146,22 @@ ENTRY {
 }
 """)
 
+# A float through a rank-0 value and back
+instr = ops.add_instruction('rank0', [], ['addr_in', 'addr_out'])
+instr.set_inputs([['d0', ['@a.addr_in'], ['4']]])
+instr.set_outputs([['d0', ['@a.addr_out'], ['4']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[] reshape(%b);
+    %d = f32[1] reshape(%c);
+    %e = u8[1,4] bitcast_convert(%d);
+    ROOT %Out0 = u8[4] reshape(%e);
+}
+""")
+
 generate_oracle(ops)
 decorator, api = import_oracle(os.path.join(ops.base_dir, 'targets', 'OPS'), 'oracle_OPS')
 
@@ -288,6 +304,11 @@ def test_broadcast_dimensions(name):
     x = small_ints((64, 64))
     out = run(name, [x], (64, 64), jnp.bfloat16)
     np.testing.assert_array_equal(out, BROADCASTS[name][1](np.asarray(x, np.float64)))
+
+
+def test_rank0_result():
+    x = jnp.asarray([3.25], dtype=jnp.float32)
+    np.testing.assert_array_equal(run('rank0', [x], (1,), jnp.float32), [3.25])
 
 
 def test_state_variable_in_the_api():

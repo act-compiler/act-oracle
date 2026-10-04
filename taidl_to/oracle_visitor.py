@@ -155,7 +155,7 @@ class OracleVisitor(IDLV2Visitor):
             self.instruction_lines.append(line)
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
-        attr_name = ctx.IDENTIFIER().getText()
+        attr_name = ctx.name().getText()
         attr_value_info = self.visit(ctx.attribute_value())
         attr_value, attr_type = attr_value_info
         return (attr_name, attr_value, attr_type)
@@ -205,6 +205,9 @@ class OracleVisitor(IDLV2Visitor):
             return []
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
+        # A rank-0 result has no shape
+        if ctx.shape() is None:
+            return (ctx.TYPE().getText(), '')
         shape_info = self.visit(ctx.shape())
         shape_dims, shape_type = shape_info
         return (shape_type, shape_dims)
