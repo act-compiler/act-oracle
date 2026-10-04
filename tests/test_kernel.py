@@ -184,3 +184,22 @@ def test_constant_reaches_hbm():
     k('fsim-compile')()
     outputs, _ = k('fsim')()
     assert np.asarray(outputs[0]).tobytes() == np.asarray(V).tobytes()
+
+
+def test_kernel_keeps_its_executable():
+    def copy(addr):
+        """A kernel that copies the input at addr to the output"""
+        @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+        def k():
+            api.load_rm(n=64, addr_in=addr, addr_out=0)
+            api.store_rm(n=64, addr_in=0, addr_out=24576)
+        return k
+
+    copy_q, copy_k = copy(0), copy(8192)
+    copy_q('fsim-compile')()
+    copy_k('fsim-compile')()
+    # Each runs its own executable, not the last one compiled
+    Q, K, V = load_qkv()
+    for k, expected in ((copy_q, Q), (copy_k, K)):
+        outputs, _ = k('fsim')(Q, K, V)
+        assert np.asarray(outputs[0]).tobytes() == np.asarray(expected).tobytes()

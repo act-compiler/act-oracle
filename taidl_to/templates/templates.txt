@@ -18,7 +18,6 @@ state = {
 ssa_types = {}
 
 global_counters = None
-executable = None
 
 mode = None
 instruction_scopes = defaultdict(list)
