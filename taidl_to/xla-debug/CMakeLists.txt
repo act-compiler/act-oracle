@@ -4,7 +4,7 @@ project(print_handler_ext CXX)
 # Find Python and JAX/nanobind
 find_package(Python COMPONENTS Interpreter Development REQUIRED)
 execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import jaxlib; import os; print(os.path.join(os.path.dirname(jaxlib.__file__), 'include'))"
+  COMMAND "${Python_EXECUTABLE}" -c "from jax import ffi; print(ffi.include_dir())"
   OUTPUT_VARIABLE JAXLIB_INCLUDE_DIR
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
