@@ -16,7 +16,6 @@ def init_templates():
     for section in content.split("### TEMPLATE: "):
         if section.strip():
             header, body = section.split(" ###\n", 1)
-            body = body.replace('tab ', '\t')
             templates[header.strip()] = body
 
 

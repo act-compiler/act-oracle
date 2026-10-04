@@ -132,11 +132,6 @@ def create_num_str(var_dim: list)->str:
         output += "}"
         return output
 
-def get_dim(lhs_dim, attrs, state, lvars, consts):
-    dim_sizes = simplify_vals(lhs_dim, attrs, state, lvars, consts)
-    dim_sizes = ','.join(dim_sizes)
-    return "[" + dim_sizes + "]"
-
 def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype="", lhs_dim=[]):
     if(lhs_name in global_counters):
         global_counters[lhs_name]["counter"] += 1
@@ -156,7 +151,6 @@ def parameter_util(global_counters, attrs, state, lvars, consts, lhs_name):
     if(lhs_name in global_counters):
         lhs_name += f'.{global_counters[lhs_name]["counter"]}'
     else:
-        lhs_name += f'.{global_counters["loop_counter"]}'
         lhs_name += f'.{global_counters["instruction_counter"]}'
     lhs_name = "%" + lhs_name
     return lhs_name
@@ -166,16 +160,6 @@ def simplify_vals(vals, attrs, state, lvars, consts):
     simplify = lambda x: str((compute(substitute(x, attrs, state, lvars, consts))))
     vals = list(map(simplify, vals))
     return vals
-
-def non_dynamic_slice(slice_configs, attrs, state, lvars, consts):
-    slice_configs = [sc.split(':') for sc in slice_configs]
-    simplify = lambda x: str(int(compute(substitute(x, attrs, state, lvars, consts))))
-    slice_configs = [list(map(simplify, sc)) for sc in slice_configs]
-    slice_configs = [('[' + ':'.join(sc) + ']') for sc in slice_configs]
-    slice_configs = ', '.join(slice_configs)
-
-    line = f'slice={{{slice_configs}}}'
-    return line
 
 def slice_load(lhs, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, consts):
     slice_configs = [sc.split(':') for sc in slice_configs]
