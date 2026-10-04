@@ -236,27 +236,21 @@ flag = 1
 {{constraints}}
 assert(flag) 
 {{update}}
-if mode == 'fsim':
-	{{fsim}}
-elif mode == 'fsim-compile':
-	lvars = {}
-	output = []
-	for name, arg in attrs.items():
-		if(isinstance(arg, str)):
-			hlo_lines, new_name = generate_loop_eq_vars(arg, global_counters)
-			output.append(hlo_lines)
-			attrs[name] = new_name
-			global_counters['loop_var'] += 1
-	
-	for name, arg in comp_attrs.items():
-		if(isinstance(arg, str)):
-			raise ValueError("Loop expressions are not supported for computation attributes")
+lvars = {}
+output = []
+for name, arg in attrs.items():
+	if(isinstance(arg, str)):
+		hlo_lines, new_name = generate_loop_eq_vars(arg, global_counters)
+		output.append(hlo_lines)
+		attrs[name] = new_name
+		global_counters['loop_var'] += 1
+
+for name, arg in comp_attrs.items():
+	if(isinstance(arg, str)):
+		raise ValueError("Loop expressions are not supported for computation attributes")
 {{fsim_compile}}
-	instruction_scopes[cur_scope] += (output)
-	global_counters['instruction_counter'] += 1
-else:
-	print(f'{{func_name}}({{attributes}})')
-	print([{{attributes}}])
+instruction_scopes[cur_scope] += (output)
+global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: NORM_LHS ###
 lhs_loc = f'%{{lhs.var_name}}'

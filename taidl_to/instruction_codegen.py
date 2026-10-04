@@ -43,7 +43,7 @@ def generate_inputs(instruction: Instruction) -> str:
         }
         output += generate_code(templates["SLICE_LOAD"], mapping)
 
-    return indent_code(output) if output else ""
+    return output
 
 
 def generate_outputs(instruction: Instruction) -> str:
@@ -70,7 +70,7 @@ def generate_outputs(instruction: Instruction) -> str:
         }
         code_output += generate_code(templates["SLICE_STORE"], mapping)
 
-    return indent_code(code_output) if code_output else ""
+    return code_output
 
 
 def generate_api_function(instruction: Instruction) -> str:
@@ -102,7 +102,6 @@ def generate_api_function(instruction: Instruction) -> str:
     update = ""
     for line in instruction.update:
         update += '\n' + line
-    fsim = "pass"
 
     inputs = generate_inputs(instruction)
     semantics = generate_semantic_code(instruction.instr_semantics_ast)
@@ -118,11 +117,8 @@ def generate_api_function(instruction: Instruction) -> str:
     fsim_compile = '\n'.join(parts)
 
     output = generate_code(templates["API_FUNC"], {
-        "attributes": attr_list,
-        "func_name": func_name,
         "update": update,
         "constraints": constraints,
-        "fsim": fsim,
         "fsim_compile": fsim_compile,
         "set_attributes": set_attributes,
         "set_comp_attr": set_comp_attr

@@ -5,13 +5,11 @@ from .oracle_visitor import OracleVisitor
 
 def generate_semantic_code(ast) -> str:
     if ast is None:
-        return "\tpass"
+        return ""
 
     visitor = OracleVisitor()
     visitor.visit(ast)
 
-    indented_lines = ["\t" + line for line in visitor.instruction_lines]
-
-    code = "\n".join(indented_lines)
+    code = "\n".join(visitor.instruction_lines)
 
     return code

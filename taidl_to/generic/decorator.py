@@ -59,6 +59,9 @@ def compile_or_load_executable(hlo_str: str):
 def kernel(hbm: int, input: list, output: list, constant=[]):
     def decorator(func):
         def launchable(mode):
+            if mode not in ('fsim', 'fsim-compile'):
+                raise ValueError(f"unknown oracle mode {mode!r}")
+
             def wrapper(f, *args, **kwargs):
                 if mode != 'fsim':
                     f()
