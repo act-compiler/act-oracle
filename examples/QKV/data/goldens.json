@@ -1,8 +1,6 @@
 {
   "attention.dat": {
-    "kernels": [
-      "attention"
-    ],
+    "kernels": ["attention"],
     "jax": "0.10.2",
     "jaxlib": "0.10.2",
     "platform": "cpu",

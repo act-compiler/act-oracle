@@ -15,21 +15,25 @@ import jax
 import jax.numpy as jnp
 
 
-EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")
+EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'examples')
 # The platform every oracle simulates on, set by --platform
-PLATFORM = "CPU"
+PLATFORM = 'CPU'
 # Each imported oracle gets a package name of its own
 oracle_ids = itertools.count()
 
 
 def pytest_addoption(parser):
-    parser.addoption("--platform", choices=["CPU", "GPU"], default="CPU",
-                     help="simulate the oracles on the CPU or the GPU")
+    parser.addoption(
+        '--platform',
+        choices=['CPU', 'GPU'],
+        default='CPU',
+        help='simulate the oracles on the CPU or the GPU',
+    )
 
 
 def pytest_configure(config):
     global PLATFORM
-    PLATFORM = config.getoption("--platform")
+    PLATFORM = config.getoption('--platform')
 
 
 def load_bf16_matrix(path, shape):
@@ -41,14 +45,15 @@ def load_bf16_matrix(path, shape):
 
 def import_oracle(target_dir, name):
     """Import the oracle generated under target_dir as package `name` and return (decorator, api)"""
-    oracle_dir = os.path.join(target_dir, "oracle")
-    spec = importlib.util.spec_from_file_location(name, os.path.join(oracle_dir, "__init__.py"),
-                                                  submodule_search_locations=[oracle_dir])
+    oracle_dir = os.path.join(target_dir, 'oracle')
+    spec = importlib.util.spec_from_file_location(
+        name, os.path.join(oracle_dir, '__init__.py'), submodule_search_locations=[oracle_dir]
+    )
     sys.modules[name] = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sys.modules[name])
-    decorator = importlib.import_module(f"{name}.decorator")
+    decorator = importlib.import_module(f'{name}.decorator')
     decorator.set_simulation_backend(PLATFORM)
-    return decorator, importlib.import_module(f"{name}.api")
+    return decorator, importlib.import_module(f'{name}.api')
 
 
 def generate_example(example_dir):
@@ -56,17 +61,18 @@ def generate_example(example_dir):
     work_dir = tempfile.mkdtemp()
     # A copy of the spec, loaded, generates its oracle beside it
     name = os.path.basename(example_dir)
-    path = shutil.copy(os.path.join(example_dir, f"{name}.py"), work_dir)
+    path = shutil.copy(os.path.join(example_dir, f'{name}.py'), work_dir)
     spec = importlib.util.spec_from_file_location(name, path)
     spec.loader.exec_module(importlib.util.module_from_spec(spec))
-    accelerator, = os.listdir(os.path.join(work_dir, "targets"))
-    return os.path.join(work_dir, "targets", accelerator)
+    (accelerator,) = os.listdir(os.path.join(work_dir, 'targets'))
+    return os.path.join(work_dir, 'targets', accelerator)
 
 
 def generate_and_import_oracle(example_dir):
     """Generate oracle into a temp dir and return (kernel, api)"""
-    oracle_decorator, oracle_api = import_oracle(generate_example(example_dir),
-                                                 f"oracle_{next(oracle_ids)}")
+    oracle_decorator, oracle_api = import_oracle(
+        generate_example(example_dir), f'oracle_{next(oracle_ids)}'
+    )
     return oracle_decorator.kernel, oracle_api
 
 
@@ -77,9 +83,9 @@ def run_kernel(kernel, api, kernel_module_name, assembly_dir, data_dir):
     qkv_kernel = kernel_module.qkv(kernel, api)
     qkv_kernel('fsim-compile')()
 
-    Q = load_bf16_matrix(os.path.join(data_dir, "Q.dat"), (64, 64))
-    K = load_bf16_matrix(os.path.join(data_dir, "K.dat"), (64, 64))
-    V = load_bf16_matrix(os.path.join(data_dir, "V.dat"), (64, 64))
+    Q = load_bf16_matrix(os.path.join(data_dir, 'Q.dat'), (64, 64))
+    K = load_bf16_matrix(os.path.join(data_dir, 'K.dat'), (64, 64))
+    V = load_bf16_matrix(os.path.join(data_dir, 'V.dat'), (64, 64))
 
     outputs, _ = qkv_kernel('fsim')(Q, K, V)
     return outputs[0]
@@ -87,9 +93,9 @@ def run_kernel(kernel, api, kernel_module_name, assembly_dir, data_dir):
 
 def load_golden(data_dir, kernel_name):
     """Return a kernel's golden and the record of where it came from"""
-    with open(os.path.join(data_dir, "goldens.json")) as f:
+    with open(os.path.join(data_dir, 'goldens.json')) as f:
         goldens = json.load(f)
-    name, record = next((n, r) for n, r in goldens.items() if kernel_name in r["kernels"])
+    name, record = next((n, r) for n, r in goldens.items() if kernel_name in r['kernels'])
     return load_bf16_matrix(os.path.join(data_dir, name), (64, 64)), record
 
 
@@ -100,13 +106,17 @@ def bf16(x):
 
 def attention_reference(data_dir):
     """Return softmax(Q K^T) V in numpy, rounded to bf16 where the spec rounds, and its tolerance"""
-    Q, K, V = (np.fromfile(os.path.join(data_dir, f"{n}.dat"), dtype=ml_dtypes.bfloat16)
-               .reshape(64, 64).astype(np.float64) for n in "QKV")
+    Q, K, V = (
+        np.fromfile(os.path.join(data_dir, f'{n}.dat'), dtype=ml_dtypes.bfloat16)
+        .reshape(64, 64)
+        .astype(np.float64)
+        for n in 'QKV'
+    )
     S = bf16(Q @ K.T)
     E = bf16(np.exp(S))
     P = bf16(E / bf16(E.sum(axis=1, keepdims=True)))
     # Two bf16 ulps at max|V| bound every output on the CPU
     ulp = 2.0 ** (np.floor(np.log2(np.abs(V).max())) - 7)
     # On the GPU, twice the two ulps an H100 reaches
-    tol = (2 if PLATFORM == "CPU" else 4) * ulp
+    tol = (2 if PLATFORM == 'CPU' else 4) * ulp
     return bf16(P @ V), tol
