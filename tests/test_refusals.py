@@ -84,6 +84,23 @@ ENTRY {{
     each_type([t for t in EVERY if t not in LOWERED[word]], check)
 
 
+def test_state_update_refused():
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    acc.add_initial_state('count', 0)
+    instr = acc.add_instruction('refused', [], ['addr'], update=['@s.count = @s.count + 1'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In0);
+}
+""")
+    message = "refused: state update '@s.count = @s.count [+] 1' is not supported by the oracle"
+    with pytest.raises(NotImplementedError, match=message):
+        generate_oracle(acc)
+
+
 # Types the grammar lexes that the oracle does not lower
 UNLOWERED_TYPES = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
 

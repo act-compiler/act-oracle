@@ -71,6 +71,11 @@ def generate_api_function(instruction: Instruction) -> str:
                 f"{func_name}: attribute name '{attr}' is reserved by the oracle"
             )
 
+    if instruction.update:
+        raise NotImplementedError(
+            f"{func_name}: state update '{instruction.update[0]}' is not supported by the oracle"
+        )
+
     set_attributes = ''
     for attr in instruction.parameters:
         set_attributes += f"'{attr}': {attr},\n"
@@ -80,10 +85,6 @@ def generate_api_function(instruction: Instruction) -> str:
     for attr in instruction.comp_attr:
         set_comp_attr += f"'{attr}': {attr},\n"
     set_comp_attr = dict_text(set_comp_attr)
-
-    update = ''
-    for line in instruction.update:
-        update += '\n' + line
 
     inputs = generate_inputs(instruction)
     semantics = generate_semantic_code(instruction)
@@ -101,7 +102,6 @@ def generate_api_function(instruction: Instruction) -> str:
     output = generate_code(
         templates['API_FUNC'],
         {
-            'update': update,
             'fsim_compile': fsim_compile,
             'set_attributes': set_attributes,
             'set_comp_attr': set_comp_attr,
