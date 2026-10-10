@@ -20,10 +20,34 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.5
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.6
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
+
+## Usage
+
+```python
+from taidl_to import generate_oracle
+
+generate_oracle(acc)  # acc: a TAIDL Accelerator
+```
+
+`generate_oracle(acc)` writes the oracle of the accelerator `acc` into `targets/<name>/oracle/` under the accelerator's `base_dir`, by default the directory of the file that creates the accelerator.
+The oracle is a Python package: `api.py` holds one function per instruction, named after it, `decorator.py` holds `kernel`, which declares a kernel's HBM size and its inputs, constants and outputs, and `build/` holds the debug handler.
+A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` traces its instruction calls into one StableHLO module and compiles it with XLA through jax, and `k('fsim')(*inputs)` runs the compiled module on the inputs and returns its outputs and the run's time in milliseconds.
+A generation that is refused leaves the oracle an earlier generation wrote in place.
+TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
+
+## Examples
+
+- `examples/mini_trn/`: `mini_trn.py`, an accelerator with two on-chip buffers, and its `attention`, `identity`, `matmul` and `softmax` kernels under `assembly/`
+- `examples/mini_trn_double/`: `mini_trn_double.py`, a variant with a third on-chip buffer, and its four attention kernels, `attention_k1.py` to `attention_k4.py`, under `assembly/`
+
+Running a spec, such as `python examples/mini_trn/mini_trn.py`, generates its oracle into `examples/mini_trn/targets/mini_trn/oracle/`.
+Each kernel file defines a function that takes the oracle's `kernel` and `api` and returns the decorated kernel; in the five attention kernels it is called `attention`.
+`tests/conftest.py` generates each oracle in a temporary directory and runs its kernels on the matrices under `data/`.
+The tests hold each attention kernel to its golden there and to a NumPy reference, and `identity`, `matmul` and `softmax` to the input, the product and the softmax NumPy computes.
 
 ## Platforms
 
