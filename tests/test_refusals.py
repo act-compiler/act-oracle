@@ -140,6 +140,32 @@ def test_failed_build_leaves_no_oracle(monkeypatch):
     assert os.listdir(os.path.join(base_dir, 'targets', 'REGENERATED')) == []
 
 
+# An input and an output typed unlike d0's u8
+UNLIKE = {
+    '%In0': """
+    %In0 = bf16[1] parameter(0);
+    %a = u8[1,2] bitcast_convert(%In0);
+    ROOT %Out0 = u8[2] reshape(%a);""",
+    '%Out0': """
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = s8[2] convert(%In0);""",
+}
+
+
+@pytest.mark.parametrize('value', UNLIKE)
+def test_tile_typed_unlike_its_data_model_refused(value):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics(f'ENTRY {{{UNLIKE[value]}\n}}')
+    typ = 'bf16' if value == '%In0' else 's8'
+    with pytest.raises(
+        ValueError, match=f"refused: '{value}' is {typ}, its data model d0 holds u8"
+    ):
+        generate_oracle(acc)
+
+
 def test_expression_in_a_list_attribute_refused():
     acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
     instr = acc.add_instruction('refused', ['k'], ['addr'])
