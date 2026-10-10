@@ -232,16 +232,18 @@ def sh_iota(lhs, lhs_type, dimension, ssa_types):
     return f'{lhs} = stablehlo.iota dim = {dimension} : {t}'
 
 
-def sh_unary(op, lhs, lhs_type, x, ssa_types):
+def sh_generic(op, lhs, lhs_type, operands, ssa_types, properties):
+    """op on operands in MLIR's generic form, which every dialect reads"""
     t = mlir_type(lhs_type)
+    types = ', '.join(ssa_types[x] for x in operands)
     ssa_types[lhs] = t
-    return f'{lhs} = stablehlo.{op} {x} : {t}'
+    return f'{lhs} = "{op}"({", ".join(operands)}){properties} : ({types}) -> {t}'
 
 
-def sh_binary(op, lhs, lhs_type, a, b, ssa_types):
-    t = mlir_type(lhs_type)
-    ssa_types[lhs] = t
-    return f'{lhs} = stablehlo.{op} {a}, {b} : {t}'
+def mlir_properties(attributes):
+    """A call's attributes, by name, as an op's properties"""
+    given = ', '.join(f'{name} = {value}' for name, value in attributes.items())
+    return f' <{{{given}}}>' if given else ''
 
 
 def sh_cast(op, lhs, lhs_type, x, ssa_types):

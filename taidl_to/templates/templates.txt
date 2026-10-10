@@ -217,12 +217,6 @@ lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 line = sh_copy(lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
-### TEMPLATE: EXP ###
-rhs_loc = parameter_util(global_counters, {{in}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_unary('exponential', lhs_loc, lhs_type, rhs_loc, ssa_types)
-output.append(line)
-
 ### TEMPLATE: BITCAST_CONVERT ###
 rhs_loc = parameter_util(global_counters, {{in}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
@@ -244,34 +238,6 @@ dims = dims.replace("'", '')
 line = sh_transpose(lhs_loc, lhs_type, in_loc, dims, ssa_types)
 output.append(line)
 
-### TEMPLATE: ADD ###
-a_loc = parameter_util(global_counters, {{A}})
-b_loc = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('add', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
-output.append(line)
-
-### TEMPLATE: SUBTRACT ###
-a_loc = parameter_util(global_counters, {{A}})
-b_loc = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('subtract', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
-output.append(line)
-
-### TEMPLATE: MULTIPLY ###
-a_loc = parameter_util(global_counters, {{A}})
-b_loc = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('multiply', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
-output.append(line)
-
-### TEMPLATE: DIVIDE ###
-a_loc = parameter_util(global_counters, {{A}})
-b_loc = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('divide', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
-output.append(line)
-
 ### TEMPLATE: REDUCE ###
 a_loc = parameter_util(global_counters, {{A}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
@@ -286,25 +252,10 @@ dims = '{{{dims}}}'
 line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
-### TEMPLATE: MAXIMUM ###
-rhs_first = parameter_util(global_counters, {{A}})
-rhs_second = parameter_util(global_counters, {{B}})
+### TEMPLATE: GENERIC ###
+operands = [parameter_util(global_counters, name) for name in {{operands}}]
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('maximum', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
-output.append(line)
-
-### TEMPLATE: MINIMUM ###
-rhs_first = parameter_util(global_counters, {{A}})
-rhs_second = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('minimum', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
-output.append(line)
-
-### TEMPLATE: XOR ###
-rhs_first = parameter_util(global_counters, {{A}})
-rhs_second = parameter_util(global_counters, {{B}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-line = sh_binary('xor', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
+line = sh_generic({{op}}, lhs_loc, lhs_type, operands, ssa_types, mlir_properties({{attributes}}))
 output.append(line)
 
 ### TEMPLATE: CONSTANT ###

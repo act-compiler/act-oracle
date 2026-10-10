@@ -48,21 +48,14 @@ class OracleVisitor(IDLV2Visitor):
         self.values = {}
         self.instruction_lines = []
 
+        # Each word's template, the generic one where none is named
         self.op_to_template = {
             'reshape': 'RESHAPE',
             'convert': 'CONVERT',
             'copy': 'COPY',
             'bitcast_convert': 'BITCAST_CONVERT',
-            'exponential': 'EXP',
             'transpose': 'TRANSPOSE',
-            'add': 'ADD',
-            'subtract': 'SUBTRACT',
-            'multiply': 'MULTIPLY',
-            'divide': 'DIVIDE',
             'broadcast': 'BROADCAST',
-            'maximum': 'MAXIMUM',
-            'minimum': 'MINIMUM',
-            'xor': 'XOR',
             'dot': 'DOT',
             'reduce_add': 'REDUCE_ADD',
             'constant': 'CONSTANT',
@@ -110,32 +103,25 @@ class OracleVisitor(IDLV2Visitor):
         if reason:
             raise ValueError(f"{self.instruction}: {op_name} of '%{lhs_name}' {reason}")
 
-        template_name = self.op_to_template[op_name]
         self.generate_from_template(
-            template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
+            op_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
         )
 
         return (lhs_name, lhs_type, lhs_shape)
 
     def generate_from_template(
-        self, template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
+        self, op_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
     ):
+        template_name = self.op_to_template.get(op_name, 'GENERIC')
         mapping = {'lhs': f"'{lhs_name}'", 'type': f"'{lhs_type}'", 'size': f'[{lhs_shape}]'}
 
-        if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
+        if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT']:
             mapping['in'] = f"'{operand_names[0]}'"
 
-        elif template_name in [
-            'ADD',
-            'SUBTRACT',
-            'MULTIPLY',
-            'DIVIDE',
-            'MAXIMUM',
-            'MINIMUM',
-            'XOR',
-        ]:
-            mapping['A'] = f"'{operand_names[0]}'"
-            mapping['B'] = f"'{operand_names[1]}'"
+        elif template_name == 'GENERIC':
+            mapping['op'] = f"'stablehlo.{op_name}'"
+            mapping['operands'] = repr(operand_names)
+            mapping['attributes'] = '{}'
 
         elif template_name == 'BROADCAST':
             mapping['A'] = f"'{operand_names[0]}'"
