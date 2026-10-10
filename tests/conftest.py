@@ -123,6 +123,9 @@ LOWERED = {
     'count_leading_zeros': INTEGERS,
     'is_finite': FLOATS,
     'reduce_precision': FLOATS,
+    'compare': EVERY,
+    'select': EVERY,
+    'clamp': EVERY,
 }
 
 

@@ -275,6 +275,34 @@ DISAGREE = {
     ROOT %Out0 = u8[4] reshape(%a);""",
         "atan2 of '%c' takes operands of its shape f32[2], found '%b' f32[1]",
     ),
+    'compare operands': (
+        """%In0 = u8[4] parameter(0);
+    %a = s8[4] convert(%In0);
+    %b = pred[4] compare(%In0, %a), direction=EQ;
+    ROOT %Out0 = u8[4] convert(%b);""",
+        "compare of '%b' takes operands alike, found '%In0' u8[4] and '%a' s8[4]",
+    ),
+    'compare result': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[4] compare(%In0, %In0), direction=EQ;
+    ROOT %Out0 = u8[4] copy(%a);""",
+        "compare of '%a' gives pred[4] of '%In0' u8[4] and '%In0' u8[4], not u8[4]",
+    ),
+    'select predicate': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %p = pred[2,2] convert(%a);
+    %b = u8[4] select(%p, %In0, %In0);
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "select of '%b' takes a pred of its shape or of rank 0, found '%p' pred[2,2]",
+    ),
+    'clamp bounds': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[4] clamp(%a, %In0, %In0);
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "clamp of '%b' takes bounds of its shape or of rank 0, found '%a' u8[2,2]",
+    ),
     'input tile': (
         """%In0 = u8[8] parameter(0);
     ROOT %Out0 = u8[4] reshape(%In0);""",

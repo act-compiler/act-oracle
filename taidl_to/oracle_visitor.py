@@ -75,6 +75,16 @@ TYPES = {
     'count_leading_zeros': INTEGERS,
     'is_finite': FLOATS,
     'reduce_precision': FLOATS,
+    'compare': EVERY,
+    'select': EVERY,
+    'clamp': EVERY,
+}
+
+# The comparison types each element type takes
+COMPARE_TYPES = {
+    **dict.fromkeys((*INTEGERS, 'pred'), ('UNSIGNED',)),
+    **dict.fromkeys(SIGNED, ('SIGNED',)),
+    **dict.fromkeys(FLOATS, ('FLOAT', 'TOTALORDER')),
 }
 
 # The words StableHLO lacks, which CHLO holds
@@ -87,6 +97,11 @@ def generic_attributes(word, attributes):
     if word == 'reduce_precision':
         bits = ('exponent_bits', 'mantissa_bits')
         given = {name: repr(f'{attributes[name]} : i32') for name in bits}
+    elif word == 'compare':
+        direction = f'#stablehlo<comparison_direction {attributes["direction"]}>'
+        given = {'comparison_direction': repr(direction)}
+        if 'type' in attributes:
+            given['compare_type'] = repr(f'#stablehlo<comparison_type {attributes["type"]}>')
     else:
         # Any other word's attributes have StableHLO's names
         given = attributes
@@ -155,6 +170,15 @@ class OracleVisitor(IDLV2Visitor):
             attribute_info = self.visit(ctx.attributes())
             for attr_name, attr_value in attribute_info:
                 attributes[attr_name] = attr_value
+
+        # A compare's type fits its operands'
+        kind = attributes.get('type') if op_name == 'compare' else None
+        if kind and kind not in COMPARE_TYPES[typ]:
+            fitting = ' or '.join(COMPARE_TYPES[typ])
+            raise ValueError(
+                f"{self.instruction}: compare of '%{lhs_name}' takes type {fitting} at {typ}, "
+                f'found {kind}'
+            )
 
         # Refuse a line whose shapes or attributes disagree
         operands = [(f"'%{name}'", self.values[name]) for name in values]
