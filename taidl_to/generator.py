@@ -1,6 +1,7 @@
 """generate_oracle, which writes an accelerator's oracle"""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,7 +12,11 @@ from taidl import Accelerator
 
 from .api_generator import generate_api_file
 from .generic.utils import MLIR_ELEM_TYPE
+from .semantic_generator import TRACE_NAMES
 from .template import write_file
+
+# The values debug names, numbered apart by the instruction counter
+DEBUG_VALUES = {'call', 'debug_prefix', 'debug_slice', 'debug_slice_f64'}
 
 
 def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
@@ -29,11 +34,17 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
     if os.path.exists(oracle_gen_dir):
         shutil.rmtree(oracle_gen_dir)
 
-    # Refuse a type the oracle does not lower, writing nothing
+    # Refuse an unlowered type or a reserved name, writing nothing
+    reserved = TRACE_NAMES | DEBUG_VALUES
     for model in accelerator.data_model:
         if model.var_type not in MLIR_ELEM_TYPE:
             raise NotImplementedError(
                 f"{model.var_name}: type '{model.var_type}' is not supported by the oracle"
+            )
+        # A tile's name too, In<k> or Out<k>
+        if model.var_name in reserved or re.fullmatch(r'(In|Out)\d+', model.var_name):
+            raise NotImplementedError(
+                f"{model.var_name}: data model name '{model.var_name}' is reserved by the oracle"
             )
 
     # Build the API's text first, so a refusal writes nothing

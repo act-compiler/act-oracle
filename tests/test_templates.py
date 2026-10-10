@@ -215,6 +215,18 @@ ENTRY {
 }
 """)
 
+# Free names: a star-imported module, two locals, a debug value's
+instr = ops.add_instruction('np', [], ['line', 'output'])
+instr.set_inputs([['d0', ['@a.line'], ['4']]])
+instr.set_outputs([['d0', ['@a.output'], ['4']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %call = u8[4] copy(%In0);
+    ROOT %Out0 = u8[4] add(%call, %In0);
+}
+""")
+
 # Each lowered word: its line, %y's shape, NumPy's %y
 LINES = {
     'add': ('%y = {t}[2,2] add(%x0, %x1);', [2, 2], lambda x, y: x + y),
@@ -358,6 +370,12 @@ def test_operation_at_each_type_it_takes(word):
             np.testing.assert_array_equal(out.astype(np.float64), exact)
 
     each_type(LOWERED[word], check)
+
+
+def test_names_the_oracle_does_not_reserve():
+    x = jnp.asarray(rng.integers(0, 256, 4), dtype=jnp.uint8)
+    out = run('np', [x], (4,), jnp.uint8)
+    np.testing.assert_array_equal(out, np.asarray(x, np.int64) * 2 % 256)
 
 
 @pytest.mark.parametrize('name', BROADCASTS)

@@ -4,6 +4,9 @@ import re
 
 from .oracle_visitor import OracleVisitor
 
+# The trace's counters, and the value the loop counter numbers
+TRACE_NAMES = {'instruction_counter', 'total_loop_counter', 'loop_var', 'loop_final'}
+
 
 def generate_semantic_code(instruction) -> str:
     if instruction.instr_semantics_ast is None:
@@ -17,6 +20,13 @@ def generate_semantic_code(instruction) -> str:
     # Each value's type, as its line declares it
     lines = instruction.instr_semantics_ast.instruction()
     types = {line.IDENTIFIER().getText(): line.result_type().TYPE().getText() for line in lines}
+    # A value takes no data model's or trace's name
+    reserved = TRACE_NAMES | {model.var_name for model in instruction.data_models}
+    for value in types:
+        if value[1:] in reserved:
+            raise NotImplementedError(
+                f"{instruction.instruction}: value name '{value}' is reserved by the oracle"
+            )
     regions = [
         ('In', 'input', instruction.instr_input_asts),
         ('Out', 'output', instruction.instr_output_asts),
