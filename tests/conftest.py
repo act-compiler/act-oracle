@@ -15,6 +15,18 @@ import jax.numpy as jnp
 
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")
+# The platform every oracle simulates on, set by --platform
+PLATFORM = "CPU"
+
+
+def pytest_addoption(parser):
+    parser.addoption("--platform", choices=["CPU", "GPU"], default="CPU",
+                     help="simulate the oracles on the CPU or the GPU")
+
+
+def pytest_configure(config):
+    global PLATFORM
+    PLATFORM = config.getoption("--platform")
 
 
 def load_bf16_matrix(path, shape):
@@ -32,7 +44,7 @@ def import_oracle(target_dir, name):
     sys.modules[name] = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sys.modules[name])
     decorator = importlib.import_module(f"{name}.decorator")
-    decorator.set_simulation_backend('CPU')
+    decorator.set_simulation_backend(PLATFORM)
     return decorator, importlib.import_module(f"{name}.api")
 
 
@@ -65,7 +77,7 @@ def generate_and_import_oracle(example_dir):
 
     oracle_decorator = importlib.import_module("oracle.decorator")
     oracle_api = importlib.import_module("oracle.api")
-    oracle_decorator.set_simulation_backend('CPU')
+    oracle_decorator.set_simulation_backend(PLATFORM)
 
     return oracle_decorator.kernel, oracle_api
 
