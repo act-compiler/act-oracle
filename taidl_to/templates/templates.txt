@@ -1,11 +1,8 @@
 ### TEMPLATE: API_FILE ###
-import os, sys
 import jax.numpy as jnp
 import ast
 from .utils import *
 from collections import defaultdict
-
-TARGET_NAME = "{{API_NAME}}"
 
 {{semantic_init}}
 
@@ -64,20 +61,15 @@ executable = None
 mode = None
 total_cost = 0
 instruction_scopes = defaultdict(list)
-instructions = []
 
 loop_variables = ["main"]
-conditional_clauses = []
 cur_scope = "main"
 scope_tuple_count = defaultdict(int)
 
-instruction_store = []
 compare_function = ""
-call_statement = ""
 
 def generate_full_hlotext(hbm_size: int):
-	global instructions, main_function_call, compare_function, call_statement, global_counters, loop_variables, cur_scope, instruction_scopes
-	counters, prologue = semantic_init(hbm_size)
+	_, prologue = semantic_init(hbm_size)
 	hlo_text = main_function_call + "\n"
 
 	hlo_text += compare_function
@@ -100,12 +92,9 @@ def generate_full_hlotext(hbm_size: int):
 	return hlo_text
 
 def start_loop(var_name, start, end):
-	global instructions, instruction_store, compare_function, call_statement, global_counters, loop_variables, cur_scope, instruction_scopes
-	instruction_store = instructions
+	global compare_function, global_counters, loop_variables, cur_scope, instruction_scopes
 	var_name = "%" + var_name
-	instructions = []
 	counter_types = "s32[]"
-	num_loop_counter = global_counters['total_loop_counter']
 	scope_tuple_count[cur_scope] += 1
 
 	for name, counter in global_counters.items():
@@ -399,7 +388,6 @@ output.append(line)
 
 ### TEMPLATE: REDUCE ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-#b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dim = {{dims}}
 apply = {{to_apply}}
@@ -524,7 +512,6 @@ def semantic_init(hbm_size):
 		'start_counter': 0,
 		'total_loop_counter': 0,
 		'loop_counter': 0,
-		'if_counter': 0,
 		'loop_var': 0,
 	}
 

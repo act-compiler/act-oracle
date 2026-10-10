@@ -1,7 +1,4 @@
-import os
-import sys
 import time
-import importlib
 import copy
 from collections import defaultdict
 
@@ -30,16 +27,12 @@ def set_simulation_backend(platform="CPU"):
 
 def reset_api():
     api.loop_variables = ["main"]
-    api.conditional_clauses = []
     api.cur_scope = "main"
-    api.instruction_store = []
     api.compare_function = ""
-    api.call_statement = ""
     api.state = copy.deepcopy(api.default_state)
     api.total_cost = 0
     api.instruction_scopes = defaultdict(list)
     api.scope_tuple_count = defaultdict(int)
-    api.instructions = []
 
 
 def generate_hlo(hbm: int) -> str:
@@ -78,7 +71,6 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     return api.total_cost
 
                 if mode == 'fsim':
-                    global backend
                     input_hbm = jnp.zeros(hbm, dtype=jnp.int8)
 
                     for const in constant:
@@ -119,7 +111,6 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
 
             if mode == 'fsim-compile':
                 reset_api()
-                api.instructions = []
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
                 func()
@@ -129,7 +120,3 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
             return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
         return launchable
     return decorator
-
-
-def launch(func, mode):
-    return func(mode)

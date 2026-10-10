@@ -4,7 +4,6 @@ These were originally on the Instruction class in TAIDL but belong to the oracle
 since they produce oracle-specific output (HLO simulation code).
 """
 
-from typing import List
 from taidl import Instruction
 
 from .template import init_templates, templates, generate_code, indent_code
@@ -134,19 +133,4 @@ def generate_api_function(instruction: Instruction) -> str:
     func_def = f'def {func_name}({attr_list}) -> None:\n'
     output = func_def + indent_code(output)
 
-    return output
-
-
-def generate_semantic_function(instruction: Instruction) -> str:
-    """Generate the semantic function for an instruction"""
-    inputs = generate_inputs(instruction)
-    semantics = generate_semantic_code(instruction.instr_semantics_ast)
-    outputs = generate_outputs(instruction)
-
-    output = f'\ndef {instruction.instruction}_semantics(attrs, state, global_counters):\n'
-    output += '\toutput = []\n\tlvars={}\n'
-    output += inputs
-    output += semantics
-    output += outputs
-    output += '\treturn output\n'
     return output

@@ -7,9 +7,8 @@ templates = {}
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
 
-def init_templates(filename="templates.txt"):
-    global templates
-    filepath = os.path.join(_TEMPLATES_DIR, filename)
+def init_templates():
+    filepath = os.path.join(_TEMPLATES_DIR, "templates.txt")
     if templates:
         return
     with open(filepath, "r") as file:
