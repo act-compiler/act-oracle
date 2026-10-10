@@ -8,12 +8,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from taidl import Accelerator
 
 from .api_generator import generate_api_file
 from .generic.utils import MLIR_ELEM_TYPE
+from .template import write_file
 
 
 def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
@@ -34,41 +36,44 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
                 f"{model.var_name}: type '{model.var_type}' is not supported by the oracle"
             )
 
-    # Setup directories
-    top_gen_directory = os.path.join(base_dir, 'targets', accelerator.name)
-    Path(top_gen_directory).mkdir(parents=True, exist_ok=True)
-
-    generic_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generic')
-    oracle_gen_dir = os.path.join(top_gen_directory, 'oracle')
-
-    # Copy generic oracle structure
-    if os.path.exists(oracle_gen_dir):
-        shutil.rmtree(oracle_gen_dir)
-    shutil.copytree(generic_dir, oracle_gen_dir)
-
-    print(f'Copied generic oracle structure to {oracle_gen_dir}')
-
-    # Generate API file
-    generate_api_file(
-        oracle_gen_dir,
+    # Build the API's text first, so a refusal writes nothing
+    api_text = generate_api_file(
         accelerator.instructions,
         accelerator.state,
         accelerator.data_model,
     )
 
-    print('Generated api.py')
+    # Setup directories
+    top_gen_directory = os.path.join(base_dir, 'targets', accelerator.name)
+    Path(top_gen_directory).mkdir(parents=True, exist_ok=True)
 
-    print(f'Oracle API generation complete for {accelerator.name}')
-
-    # Build the debug handler into the oracle, afresh at every generation
-    print(f'Building oracle for {accelerator.name}')
+    generic_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generic')
     xla_debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xla-debug')
-    build_dir = os.path.join(oracle_gen_dir, 'build')
-    subprocess.run(
-        ['cmake', '-S', xla_debug_dir, '-B', build_dir, f'-DPython_EXECUTABLE={sys.executable}'],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
-    subprocess.run(['cmake', '--build', build_dir], check=True, stdout=subprocess.DEVNULL)
-    print(f'Oracle build complete for {accelerator.name}')
-    print(f'The oracle API is located at {oracle_gen_dir}/')
+    oracle_gen_dir = os.path.join(top_gen_directory, 'oracle')
+
+    # Assemble the new oracle beside the previous one
+    with tempfile.TemporaryDirectory(dir=top_gen_directory) as staging_dir:
+        new_oracle_dir = os.path.join(staging_dir, 'oracle')
+        shutil.copytree(generic_dir, new_oracle_dir)
+        write_file(api_text, os.path.join(new_oracle_dir, 'api.py'))
+        # Build the debug handler into it, afresh at every generation
+        build_dir = os.path.join(new_oracle_dir, 'build')
+        subprocess.run(
+            [
+                'cmake',
+                '-S',
+                xla_debug_dir,
+                '-B',
+                build_dir,
+                f'-DPython_EXECUTABLE={sys.executable}',
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(['cmake', '--build', build_dir], check=True, stdout=subprocess.DEVNULL)
+        # Swap it in; the previous one leaves with staging
+        if os.path.exists(oracle_gen_dir):
+            os.rename(oracle_gen_dir, os.path.join(staging_dir, 'previous'))
+        os.rename(new_oracle_dir, oracle_gen_dir)
+
+    print(f'Generated the oracle for {accelerator.name} at {oracle_gen_dir}/')

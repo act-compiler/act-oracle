@@ -1,15 +1,7 @@
 """API file generator for Oracle"""
 
 from .instruction_codegen import generate_api_function
-from .template import (
-    dict_text,
-    generate_code,
-    indent_code,
-    init_templates,
-    layout,
-    templates,
-    write_file,
-)
+from .template import dict_text, generate_code, indent_code, init_templates, layout, templates
 
 
 def generate_semantic_init(data_models):
@@ -37,8 +29,8 @@ def generate_semantic_init(data_models):
     return layout(output)
 
 
-def generate_api_file(oracle_gen_dir: str, instructions, state, data_models) -> None:
-    """Generate the api.py file for oracle"""
+def generate_api_file(instructions, state, data_models) -> str:
+    """Generate the text of the oracle's api.py"""
     init_templates()
 
     semantic_init = generate_semantic_init(data_models)
@@ -55,4 +47,4 @@ def generate_api_file(oracle_gen_dir: str, instructions, state, data_models) -> 
     for instruction in instructions:
         output += generate_api_function(instruction)
 
-    write_file(output, oracle_gen_dir + '/api.py')
+    return output

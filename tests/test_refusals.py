@@ -1,11 +1,14 @@
-"""Test what generation refuses"""
+"""Test what generation refuses, and the oracle a refusal keeps"""
 
 import os
 import re
+import subprocess
+import sys
 import tempfile
 
 import pytest
 import taidl.antlr4
+from conftest import import_oracle
 from taidl import Accelerator
 from taidl.operations import BOOL, INT, INTS, LITERAL, NUMBER, ONE_INT, OPERATIONS, RANGES
 
@@ -86,6 +89,58 @@ def test_unlowered_type_in_data_model_refused(t):
     acc.add_data_model('d1', [4], [4], t)
     with pytest.raises(NotImplementedError, match=f"d1: type '{t}' is not supported"):
         generate_oracle(acc)
+
+
+def two_bytes(base_dir, name, line):
+    """Accelerator KEPT, its one instruction ending in line"""
+    acc = Accelerator('KEPT', base_dir=base_dir)
+    instr = acc.add_instruction(name, [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[2] parameter(0);
+    {line}
+}}
+""")
+    return acc
+
+
+COPY = 'ROOT %Out0 = u8[2] copy(%In0);'
+
+
+def test_refused_generation_keeps_the_previous_oracle():
+    base_dir = tempfile.mkdtemp()
+    generate_oracle(two_bytes(base_dir, 'first', COPY))
+    op = unmapped()[0]
+    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
+        generate_oracle(two_bytes(base_dir, 'refused', written(op)))
+    _, kept = import_oracle(os.path.join(base_dir, 'targets', 'KEPT'), 'oracle_KEPT')
+    assert hasattr(kept, 'first')
+
+
+def test_generation_replaces_the_previous_oracle():
+    base_dir = tempfile.mkdtemp()
+    generate_oracle(two_bytes(base_dir, 'first', COPY))
+    generate_oracle(two_bytes(base_dir, 'second', COPY))
+    target_dir = os.path.join(base_dir, 'targets', 'KEPT')
+    # Nothing left beside the new oracle
+    assert os.listdir(target_dir) == ['oracle']
+    _, replaced = import_oracle(target_dir, 'oracle_REPLACED')
+    assert hasattr(replaced, 'second') and not hasattr(replaced, 'first')
+
+
+def test_failed_build_keeps_the_previous_oracle(monkeypatch):
+    base_dir = tempfile.mkdtemp()
+    generate_oracle(two_bytes(base_dir, 'first', COPY))
+    # The handler build fails without a Python
+    monkeypatch.setattr(sys, 'executable', os.path.join(base_dir, 'no-python'))
+    with pytest.raises(subprocess.CalledProcessError):
+        generate_oracle(two_bytes(base_dir, 'second', COPY))
+    target_dir = os.path.join(base_dir, 'targets', 'KEPT')
+    assert os.listdir(target_dir) == ['oracle']
+    _, kept = import_oracle(target_dir, 'oracle_BUILT')
+    assert hasattr(kept, 'first') and not hasattr(kept, 'second')
 
 
 def test_expression_in_a_list_attribute_refused():
