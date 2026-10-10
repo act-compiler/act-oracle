@@ -250,6 +250,17 @@ DISAGREE = {
     ROOT %Out0 = u8[4] copy(%b);""",
         "dot of '%b' gives u8[2,2] of '%a' u8[2,2] and '%a' u8[2,2], not u8[4]",
     ),
+    'input tile': (
+        """%In0 = u8[8] parameter(0);
+    ROOT %Out0 = u8[4] reshape(%In0);""",
+        "'%In0' is u8[8], more elements than the 4 of its input region in d0",
+    ),
+    'output tile': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,4] broadcast(%In0), dimensions={1};
+    ROOT %Out0 = u8[8] reshape(%a);""",
+        "'%Out0' is u8[8], more elements than the 4 of its output region in d0",
+    ),
 }
 
 
