@@ -380,6 +380,13 @@ DISAGREE = {
     ROOT %Out0 = u8[4] reshape(%b);""",
         "gather of '%b' gives u8[3,2] of '%a' u8[2,2] and '%i' s32[3,1], not u8[2,2]",
     ),
+    'reduce_max shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[4] reduce_max(%a), dimensions={0};
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "reduce_max of '%b' gives u8[2] of '%a' u8[2,2], not u8[4]",
+    ),
     'input tile': (
         """%In0 = u8[8] parameter(0);
     ROOT %Out0 = u8[4] reshape(%In0);""",

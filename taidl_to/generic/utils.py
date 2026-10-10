@@ -187,18 +187,31 @@ def mlir_literal(value, typ, shown=None):
         return f'0x{bits:X}'
     if isinstance(value, float):
         raise TypeError(f'{shown} at {typ} is not an integer')
-    if typ == 'pred':
-        low, high = 0, 1
-    else:
-        width = int(typ[1:])
-        low, high = (
-            (-(1 << (width - 1)), (1 << (width - 1)) - 1)
-            if typ[0] == 's'
-            else (0, (1 << width) - 1)
-        )
+    low, high = integer_range(typ)
     if not low <= value <= high:
         raise ValueError(f'{shown} at {typ} is out of its range')
     return str(int(value))
+
+
+def integer_range(typ):
+    """The least and the greatest value of an integer type or pred"""
+    if typ == 'pred':
+        return 0, 1
+    width = int(typ[1:])
+    if typ[0] == 's':
+        return -(1 << (width - 1)), (1 << (width - 1)) - 1
+    return 0, (1 << width) - 1
+
+
+def reduce_init(op, typ):
+    """The identity of reducer op at element type typ, as an MLIR literal; a float sum starts
+    from +0.0, as XLA's does"""
+    least, greatest = (-math.inf, math.inf) if typ in FLOAT_BITS else integer_range(typ)
+    identities = {'add': 0, 'multiply': 1, 'maximum': least, 'minimum': greatest, 'or': 0, 'xor': 0}
+    if typ not in FLOAT_BITS:
+        # and's identity has every bit set
+        identities['and'] = -1 if typ[0] == 's' else greatest
+    return mlir_literal(identities[op], typ)
 
 
 def dims_list(dims):
@@ -313,8 +326,9 @@ def sh_dot(lhs, lhs_type, a, b, lhs_batch, lhs_contracting, rhs_batch, rhs_contr
 def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
     t = mlir_type(lhs_type)
     scalar_t = f'tensor<{mlir_elem(t)}>'
+    init = reduce_init(op, lhs_type.split('[')[0])
     lines = [
-        f'{lhs}.init = stablehlo.constant dense<{mlir_zero(scalar_t)}> : {scalar_t}',
+        f'{lhs}.init = stablehlo.constant dense<{init}> : {scalar_t}',
         (
             f'{lhs} = stablehlo.reduce({x} init: {lhs}.init) applies stablehlo.{op} '
             f'across dimensions = {dims_list(dims)} : ({ssa_types[x]}, {scalar_t}) -> {t}'
