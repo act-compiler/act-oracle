@@ -5,6 +5,11 @@ from .oracle_visitor import OracleVisitor
 
 def generate_semantic_code(instruction) -> str:
     if instruction.instr_semantics_ast is None:
+        # Nothing computes an output
+        if instruction.instr_output_asts:
+            raise ValueError(
+                f"{instruction.instruction}: no semantics gives '%Out0' for output region 0"
+            )
         return ''
 
     # Each value's type, as its line declares it

@@ -101,6 +101,15 @@ ENTRY {
         generate_oracle(acc)
 
 
+def test_outputs_with_no_semantics_refused():
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    with pytest.raises(ValueError, match="refused: no semantics gives '%Out0' for output region 0"):
+        generate_oracle(acc)
+
+
 # Types the grammar lexes that the oracle does not lower
 UNLOWERED_TYPES = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
 
