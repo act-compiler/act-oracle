@@ -1,5 +1,6 @@
 """What a generated api.py traces with: loop expressions, SSA names, types, emitters"""
 
+import math
 import re
 
 import numpy as np
@@ -155,6 +156,51 @@ def mlir_zero(mlir_t):
     return '0.0' if mlir_elem(mlir_t) in ('f64', 'f32', 'f16', 'bf16') else '0'
 
 
+# Exponent and mantissa bits of each float type
+FLOAT_BITS = {'f64': (11, 52), 'f32': (8, 23), 'f16': (5, 10), 'bf16': (8, 7)}
+
+
+def mlir_literal(value, typ, shown=None):
+    """A Python scalar as an MLIR literal of element type typ, refusing one typ cannot hold"""
+    shown = shown or (str(value).lower() if isinstance(value, bool) else str(value))
+    if isinstance(value, bool) and typ != 'pred':
+        raise TypeError(f'{shown} at {typ} is a pred literal')
+    if typ in FLOAT_BITS:
+        exponent, mantissa = FLOAT_BITS[typ]
+        if isinstance(value, int) or math.isfinite(value):
+            # Out of range: a finite value rounding past typ's largest
+            past = ((1 << (mantissa + 2)) - 1) << ((1 << (exponent - 1)) - mantissa - 2)
+            if abs(value) >= past:
+                raise ValueError(f'{shown} at {typ} is out of its range')
+            # MLIR reads a float with a dot before its exponent
+            text = repr(float(value))
+            return text if '.' in text else text.replace('e', '.0e')
+        # A decimal past a double's range reads as an infinity
+        if math.isinf(value) and 'inf' not in shown:
+            raise ValueError(f'{shown} at {typ} is out of its range')
+        # MLIR reads a non-finite float by its bits
+        bits = ((1 << exponent) - 1) << mantissa
+        if math.isnan(value):
+            bits |= 1 << (mantissa - 1)
+        if math.copysign(1, value) < 0:
+            bits |= 1 << (exponent + mantissa)
+        return f'0x{bits:X}'
+    if isinstance(value, float):
+        raise TypeError(f'{shown} at {typ} is not an integer')
+    if typ == 'pred':
+        low, high = 0, 1
+    else:
+        width = int(typ[1:])
+        low, high = (
+            (-(1 << (width - 1)), (1 << (width - 1)) - 1)
+            if typ[0] == 's'
+            else (0, (1 << width) - 1)
+        )
+    if not low <= value <= high:
+        raise ValueError(f'{shown} at {typ} is out of its range')
+    return str(int(value))
+
+
 def dims_list(dims):
     """{1, 0} as text, a set or {} -> [1, 0], keeping a text's order"""
     if isinstance(dims, (set, dict)):
@@ -167,6 +213,23 @@ def sh_zeros(lhs, xla_type, ssa_types):
     t = mlir_type(xla_type)
     ssa_types[lhs] = t
     return f'{lhs} = stablehlo.constant dense<{mlir_zero(t)}> : {t}'
+
+
+def sh_constant(lhs, lhs_type, value, instruction, ssa_types):
+    """value at every element of lhs_type, refused by name where lhs_type cannot hold it"""
+    t = mlir_type(lhs_type)
+    try:
+        literal = mlir_literal(value, lhs_type.split('[')[0])
+    except (TypeError, ValueError) as error:
+        raise type(error)(f'{instruction}: constant {error}') from None
+    ssa_types[lhs] = t
+    return f'{lhs} = stablehlo.constant dense<{literal}> : {t}'
+
+
+def sh_iota(lhs, lhs_type, dimension, ssa_types):
+    t = mlir_type(lhs_type)
+    ssa_types[lhs] = t
+    return f'{lhs} = stablehlo.iota dim = {dimension} : {t}'
 
 
 def sh_unary(op, lhs, lhs_type, x, ssa_types):

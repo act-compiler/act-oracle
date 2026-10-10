@@ -79,6 +79,8 @@ LOWERED = {
     'xor': INTEGERS + ['pred'],
     'dot': EVERY,
     'reduce_add': EVERY,
+    'constant': EVERY,
+    'iota': FLOATS + INTEGERS,
 }
 
 

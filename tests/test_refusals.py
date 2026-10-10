@@ -10,7 +10,7 @@ import pytest
 import taidl.antlr4
 from conftest import EVERY, LOWERED, each_type, import_oracle
 from taidl import Accelerator
-from taidl.operations import BOOL, INT, INTS, LITERAL, NUMBER, ONE_INT, OPERATIONS, RANGES
+from taidl.operations import BOOL, INT, INTS, NUMBER, ONE_INT, OPERATIONS, RANGES
 
 from taidl_to import generate_oracle
 
@@ -29,20 +29,17 @@ def unmapped():
 SAMPLES = {INT: '0', INTS: '{0}', ONE_INT: '{0}', RANGES: '{[0:2]}', BOOL: 'true', NUMBER: '0.5'}
 
 
-def written(op):
-    """A line that writes op with the operands and the required attributes of its row."""
+def written(op, lhs='ROOT %Out0', t='u8', operand='%In0'):
+    """A line that writes op at t on operand, with op's required attributes from OPERATIONS."""
     takes, attributes = OPERATIONS[op]
-    if takes == LITERAL:
-        operands = '0'
-    else:
-        count = takes[0] if isinstance(takes, tuple) else takes
-        operands = ', '.join(['%In0'] * count)
+    count = takes[0] if isinstance(takes, tuple) else takes
+    operands = ', '.join([operand] * count)
     given = ''.join(
         f', {name}={form[0] if isinstance(form, tuple) else SAMPLES[form]}'
         for name, (form, required) in attributes.items()
         if required
     )
-    return f'ROOT %Out0 = u8[2] {op}({operands}){given};'
+    return f'{lhs} = {t}[2] {op}({operands}){given};'
 
 
 @pytest.mark.parametrize('op', unmapped())
@@ -63,8 +60,6 @@ ENTRY {{
 
 @pytest.mark.parametrize('word', [word for word, types in LOWERED.items() if types != EVERY])
 def test_operation_at_a_type_it_does_not_take_refused(word):
-    operands = ', '.join(['%a'] * OPERATIONS[word][0])
-
     def check(t):
         acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
         instr = acc.add_instruction('refused', [], ['addr'])
@@ -74,7 +69,7 @@ def test_operation_at_a_type_it_does_not_take_refused(word):
 ENTRY {{
     %In0 = u8[2] parameter(0);
     %a = {t}[2] convert(%In0);
-    %b = {t}[2] {word}({operands});
+    {written(word, '%b', t, '%a')}
     ROOT %Out0 = u8[2] convert(%b);
 }}
 """)
@@ -249,6 +244,12 @@ DISAGREE = {
     %b = u8[4] dot(%a, %a), lhs_contracting_dims={1}, rhs_contracting_dims={0};
     ROOT %Out0 = u8[4] copy(%b);""",
         "dot of '%b' gives u8[2,2] of '%a' u8[2,2] and '%a' u8[2,2], not u8[4]",
+    ),
+    'iota dimension': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[4] iota(), iota_dimension=1;
+    ROOT %Out0 = u8[4] add(%In0, %a);""",
+        "iota of '%a' takes an iota_dimension below the rank 1 of its result, found 1",
     ),
     'input tile': (
         """%In0 = u8[8] parameter(0);

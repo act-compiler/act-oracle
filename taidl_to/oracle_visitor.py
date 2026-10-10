@@ -1,9 +1,11 @@
 """ANTLR4-based visitor turning TAIDL semantics into the code that traces their StableHLO"""
 
+import re
+
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import python
-from .generic.utils import MLIR_ELEM_TYPE
+from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
 from .shapes import declared, disagreement
 from .template import generate_code, templates
 
@@ -30,6 +32,8 @@ TYPES = {
     'xor': (*INTEGERS, 'pred'),
     'dot': EVERY,
     'reduce_add': EVERY,
+    'constant': EVERY,
+    'iota': FLOATS + INTEGERS,
 }
 
 
@@ -61,6 +65,8 @@ class OracleVisitor(IDLV2Visitor):
             'xor': 'XOR',
             'dot': 'DOT',
             'reduce_add': 'REDUCE_ADD',
+            'constant': 'CONSTANT',
+            'iota': 'IOTA',
         }
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
@@ -84,7 +90,9 @@ class OracleVisitor(IDLV2Visitor):
             )
 
         operand_names = []
-        if ctx.operands():
+        if op_name == 'constant':
+            operand_names.append(self.constant_value(ctx.operands().operand(0).value(), lhs_type))
+        elif ctx.operands():
             operand_info = self.visit(ctx.operands())
             for operand_value in operand_info:
                 operand_names.append(operand_value.lstrip('%'))
@@ -95,8 +103,9 @@ class OracleVisitor(IDLV2Visitor):
             for attr_name, attr_value in attribute_info:
                 attributes[attr_name] = attr_value
 
-        # Refuse a line whose shapes or attributes disagree
-        operands = [(f"'%{name}'", self.values[name]) for name in operand_names]
+        # Refuse disagreeing shapes or attributes, a constant's literal aside
+        values = [] if op_name == 'constant' else operand_names
+        operands = [(f"'%{name}'", self.values[name]) for name in values]
         reason = disagreement(op_name, self.values[lhs_name], operands, attributes)
         if reason:
             raise ValueError(f"{self.instruction}: {op_name} of '%{lhs_name}' {reason}")
@@ -155,10 +164,35 @@ class OracleVisitor(IDLV2Visitor):
             mapping['dims'] = '{' + ', '.join(str(d) for d in attributes['dimensions']) + '}'
             template_name = 'REDUCE'
 
+        elif template_name == 'CONSTANT':
+            mapping['value'] = operand_names[0]
+            mapping['instruction'] = repr(self.instruction)
+
+        elif template_name == 'IOTA':
+            mapping['dimension'] = attributes['iota_dimension']
+
         template_code = generate_code(templates[template_name], mapping)
 
         for line in template_code.strip().split('\n'):
             self.instruction_lines.append(line)
+
+    def constant_value(self, value, typ):
+        """A constant's literal as Python, checked against typ here; an expression at the call"""
+        text = value.getText()
+        if value.EXPRESSION():
+            return python(self.expressions[value.EXPRESSION()])
+        if value.IDENTIFIER():
+            literal = text == 'true'
+        elif re.fullmatch(r'-?[0-9]+', text):
+            literal = int(text)
+        else:
+            literal = float(text)
+        try:
+            mlir_literal(literal, typ, text)
+        except (TypeError, ValueError) as error:
+            raise type(error)(f'{self.instruction}: constant {error}') from None
+        # The spec's own text, which inf and nan need
+        return f"float('{text}')" if isinstance(literal, float) else repr(literal)
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.name().getText()
@@ -173,8 +207,18 @@ class OracleVisitor(IDLV2Visitor):
         return attributes_list
 
     def visitAttribute_value(self, ctx: IDLV2Parser.Attribute_valueContext):
-        # A lowered word's every attribute is a list of integers
-        return self.visit(ctx.brace_list())
+        if ctx.brace_list():
+            return self.visit(ctx.brace_list())
+        value = ctx.value()
+        if value.EXPRESSION():
+            # A scalar attribute lowers from a literal alone
+            name = ctx.parentCtx.name().getText()
+            raise NotImplementedError(
+                f"{self.instruction}: an expression in '{name}' is not supported by the oracle"
+            )
+        # Drop an integer's leading zeros, which Python refuses
+        text = value.getText()
+        return str(int(text)) if re.fullmatch(r'-?[0-9]+', text) else text
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
         values = []
