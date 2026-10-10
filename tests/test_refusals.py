@@ -303,6 +303,83 @@ DISAGREE = {
     ROOT %Out0 = u8[4] copy(%b);""",
         "clamp of '%b' takes bounds of its shape or of rank 0, found '%a' u8[2,2]",
     ),
+    'slice range': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2] slice(%In0), slice={[3:5]};
+    ROOT %Out0 = u8[4] broadcast(%a), dimensions={0};""",
+        "slice of '%a' takes ranges within '%In0' u8[4], found [3:5:1]",
+    ),
+    'slice shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[3] slice(%In0), slice={[0:4:2]};
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "slice of '%a' gives u8[2] of '%In0' u8[4], not u8[3]",
+    ),
+    'dynamic_slice indices': (
+        """%In0 = u8[4] parameter(0);
+    %i = s32[] constant(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[1,2] dynamic_slice(%a, %i), dynamic_slice_sizes={1,2};
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "dynamic_slice of '%b' takes one index per dimension of '%a' u8[2,2], found 1",
+    ),
+    'dynamic_slice sizes': (
+        """%In0 = u8[4] parameter(0);
+    %i = s32[] constant(0);
+    %a = u8[5] dynamic_slice(%In0, %i), dynamic_slice_sizes={5};
+    ROOT %Out0 = u8[4] reshape(%In0);""",
+        "dynamic_slice of '%a' takes slice sizes within '%In0' u8[4], found {5}",
+    ),
+    'concatenate operands': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[1,4] reshape(%In0);
+    %c = u8[3,2] concatenate(%a, %b), dimensions={0};
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "concatenate of '%c' takes operands alike off dimension 0, found '%b' u8[1,4]",
+    ),
+    'concatenate shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[6] concatenate(%In0, %In0), dimensions={0};
+    ROOT %Out0 = u8[4] reshape(%In0);""",
+        "concatenate of '%a' gives u8[8] of '%In0' u8[4] and '%In0' u8[4], not u8[6]",
+    ),
+    'pad interior': (
+        """%In0 = u8[4] parameter(0);
+    %z = u8[] constant(0);
+    %a = u8[4] pad(%In0, %z), edge_padding_low={0}, edge_padding_high={0}, interior_padding={-1};
+    ROOT %Out0 = u8[4] copy(%a);""",
+        "pad of '%a' takes interior padding of 0 or more, found {-1}",
+    ),
+    'pad shape': (
+        """%In0 = u8[4] parameter(0);
+    %z = u8[] constant(0);
+    %a = u8[9] pad(%In0, %z), edge_padding_low={1}, edge_padding_high={0}, interior_padding={1};
+    ROOT %Out0 = u8[4] reshape(%In0);""",
+        "pad of '%a' gives u8[8] of '%In0' u8[4] and '%z' u8[], not u8[9]",
+    ),
+    'reverse dimensions': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[4] reverse(%In0), dimensions={1};
+    ROOT %Out0 = u8[4] copy(%a);""",
+        "reverse of '%a' takes distinct dimensions below the rank 1 of '%In0' u8[4], found {1}",
+    ),
+    'dynamic_update_slice update': (
+        """%In0 = u8[4] parameter(0);
+    %i = s32[] constant(0);
+    %a = u8[8] concatenate(%In0, %In0), dimensions={0};
+    %b = u8[4] dynamic_update_slice(%In0, %a, %i);
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "dynamic_update_slice of '%b' takes an update within '%In0' u8[4], found '%a' u8[8]",
+    ),
+    'gather shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %i = s32[3,1] constant(0);
+    %b = u8[2,2] gather(%a, %i), offset_dims={1}, collapsed_slice_dims={0}, start_index_map={0}, index_vector_dim=1, slice_sizes={1,2};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "gather of '%b' gives u8[3,2] of '%a' u8[2,2] and '%i' s32[3,1], not u8[2,2]",
+    ),
     'input tile': (
         """%In0 = u8[8] parameter(0);
     ROOT %Out0 = u8[4] reshape(%In0);""",

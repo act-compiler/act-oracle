@@ -238,10 +238,25 @@ def sh_generic(op, lhs, lhs_type, operands, ssa_types, properties):
     return f'{lhs} = "{op}"({", ".join(operands)}){properties} : ({types}) -> {t}'
 
 
+def mlir_attribute(value):
+    """An attribute's value as MLIR writes it: text, a list of integers or an integer"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return f'array<i64: {", ".join(str(v) for v in value)}>' if value else 'array<i64>'
+    return f'{value} : i64'
+
+
 def mlir_properties(attributes):
     """A call's attributes, by name, as an op's properties"""
-    given = ', '.join(f'{name} = {value}' for name, value in attributes.items())
+    given = ', '.join(f'{name} = {mlir_attribute(value)}' for name, value in attributes.items())
     return f' <{{{given}}}>' if given else ''
+
+
+def gather_numbers(index_vector_dim, **dims):
+    """A gather's dimension numbers as StableHLO writes them"""
+    given = ', '.join(f'{name} = {dims_list(value)}' for name, value in dims.items())
+    return f'#stablehlo.gather<{given}, index_vector_dim = {index_vector_dim}>'
 
 
 def sh_cast(op, lhs, lhs_type, x, ssa_types):

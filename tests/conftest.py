@@ -126,6 +126,13 @@ LOWERED = {
     'compare': EVERY,
     'select': EVERY,
     'clamp': EVERY,
+    'slice': EVERY,
+    'dynamic_slice': EVERY,
+    'concatenate': EVERY,
+    'pad': EVERY,
+    'reverse': EVERY,
+    'dynamic_update_slice': EVERY,
+    'gather': EVERY,
 }
 
 

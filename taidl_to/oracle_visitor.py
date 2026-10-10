@@ -6,7 +6,7 @@ from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
-from .shapes import declared, disagreement
+from .shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .template import generate_code, templates
 
 # Element types as a semantics spells them
@@ -78,6 +78,13 @@ TYPES = {
     'compare': EVERY,
     'select': EVERY,
     'clamp': EVERY,
+    'slice': EVERY,
+    'dynamic_slice': EVERY,
+    'concatenate': EVERY,
+    'pad': EVERY,
+    'reverse': EVERY,
+    'dynamic_update_slice': EVERY,
+    'gather': EVERY,
 }
 
 # The comparison types each element type takes
@@ -86,6 +93,9 @@ COMPARE_TYPES = {
     **dict.fromkeys(SIGNED, ('SIGNED',)),
     **dict.fromkeys(FLOATS, ('FLOAT', 'TOTALORDER')),
 }
+
+# Where each word's integer index operands start
+INDICES = {'dynamic_slice': 1, 'dynamic_update_slice': 2, 'gather': 1}
 
 # The words StableHLO lacks, which CHLO holds
 CHLO = ('mulhi', 'erf', 'asin', 'acos', 'sinh', 'cosh', 'asinh', 'acosh', 'atanh')
@@ -107,10 +117,22 @@ def generic_attributes(word, attributes):
         given = {'comparison_direction': repr(direction)}
         if 'type' in attributes:
             given['compare_type'] = repr(f'#stablehlo<comparison_type {attributes["type"]}>')
+    elif word == 'slice':
+        starts, limits, strides = zip(*attributes['slice'])
+        given = {'start_indices': starts, 'limit_indices': limits, 'strides': strides}
+    elif word == 'dynamic_slice':
+        given = {'slice_sizes': attributes['dynamic_slice_sizes']}
+    elif word == 'concatenate':
+        given = {'dimension': attributes['dimensions'][0]}
+    elif word == 'gather':
+        lists = {**GATHER_DEFAULTS, **attributes}
+        dims = ', '.join(f'{name}={source(lists[name])}' for name in GATHER_LISTS)
+        given = {'dimension_numbers': f'gather_numbers({attributes["index_vector_dim"]}, {dims})'}
+        given['slice_sizes'] = attributes['slice_sizes']
     else:
         # Any other word's attributes have StableHLO's names
         given = attributes
-    return '{' + ', '.join(f"'{name}': {value}" for name, value in given.items()) + '}'
+    return '{' + ', '.join(f"'{name}': {source(value)}" for name, value in given.items()) + '}'
 
 
 class OracleVisitor(IDLV2Visitor):
@@ -169,6 +191,12 @@ class OracleVisitor(IDLV2Visitor):
                 f"{self.instruction}: operation '{op_name}' at type '{typ}' "
                 'is not supported by the oracle'
             )
+        for name in operand_names[INDICES.get(op_name, len(operand_names)) :]:
+            if self.values[name][0] not in INTEGERS:
+                raise NotImplementedError(
+                    f"{self.instruction}: operation '{op_name}' at an index of type "
+                    f"'{self.values[name][0]}' is not supported by the oracle"
+                )
 
         attributes = {}
         if ctx.attributes():
@@ -281,6 +309,8 @@ class OracleVisitor(IDLV2Visitor):
     def visitAttribute_value(self, ctx: IDLV2Parser.Attribute_valueContext):
         if ctx.brace_list():
             return self.visit(ctx.brace_list())
+        if ctx.slice_list():
+            return self.visit(ctx.slice_list())
         value = ctx.value()
         if value.EXPRESSION():
             # A scalar attribute lowers from a literal alone
@@ -294,6 +324,17 @@ class OracleVisitor(IDLV2Visitor):
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
         return [self.integer_source(value_ctx) for value_ctx in ctx.value()]
+
+    def visitSlice_list(self, ctx: IDLV2Parser.Slice_listContext):
+        """Each range's start, limit and stride, the stride 1 unless given"""
+        ranges, bounds = [], []
+        for child in ctx.getChildren():
+            if isinstance(child, IDLV2Parser.ValueContext):
+                bounds.append(self.integer_source(child))
+            elif child.getText() == ']':
+                ranges.append((*bounds, '1')[:3])
+                bounds = []
+        return ranges
 
     def integer_source(self, ctx):
         """An integer as Python: a literal's value, or an expression evaluated at each call"""

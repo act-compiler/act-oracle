@@ -56,6 +56,13 @@ def agree(dims, others) -> bool:
     )
 
 
+def within(sizes, dims) -> bool:
+    """Whether each size is at least 0 and at most its dim, where both are integers."""
+    return len(sizes) == len(dims) and all(
+        not known([size, dim]) or 0 <= size <= dim for size, dim in zip(sizes, dims)
+    )
+
+
 def count(dims):
     """A shape's element count, or None where a dim is an expression."""
     total = 1
@@ -97,6 +104,16 @@ def gives(dims, result, operands, typ=None):
         return None
     given = ' and '.join(f'{name} {text(value)}' for name, value in operands)
     return f'gives {text((typ, dims))} of {given}, not {text(result)}'
+
+
+def indexes(name, value, indices):
+    """One index of rank 0 per dimension of an operand, every index of one type."""
+    if len(indices) != len(value[1]):
+        return f'takes one index per dimension of {name} {text(value)}, found {len(indices)}'
+    for index, (typ, dims) in indices:
+        if dims or typ != indices[0][1][0]:
+            return f'takes indices of rank 0 and one type, found {index} {text((typ, dims))}'
+    return None
 
 
 def free(result, operands, attributes):
@@ -209,6 +226,146 @@ def broadcast(result, operands, attributes):
     return typed(result, operands)
 
 
+def concatenate(result, operands, attributes):
+    (first, value), *_ = operands
+    (dim,) = numbers(attributes['dimensions'])
+    rank = len(value[1])
+    for name, other in operands:
+        if len(other[1]) != rank:
+            return (
+                f'takes operands of one rank, found {first} {text(value)} and {name} {text(other)}'
+            )
+    if not isinstance(dim, int):
+        return typed(result, operands)
+    if not 0 <= dim < rank:
+        return f'takes a dimension below the rank {rank} of {first} {text(value)}, found {dim}'
+    # Alike but along the dimension, whose sizes add up
+    for name, other in operands:
+        if not agree(other[1][:dim] + other[1][dim + 1 :], value[1][:dim] + value[1][dim + 1 :]):
+            return f'takes operands alike off dimension {dim}, found {name} {text(other)}'
+    sizes = [other[1][dim] for _, other in operands]
+    joined = value[1][:dim] + [sum(sizes) if known(sizes) else '?'] + value[1][dim + 1 :]
+    return typed(result, operands) or gives(joined, result, operands)
+
+
+def pad(result, operands, attributes):
+    (name, value), (padding, given) = operands
+    if given[1]:
+        return f'takes a padding value of rank 0, found {padding} {text(given)}'
+    lists = ['edge_padding_low', 'edge_padding_high', 'interior_padding']
+    low, high, interior = (numbers(attributes[key]) for key in lists)
+    rank = len(value[1])
+    if not len(low) == len(high) == len(interior) == rank:
+        return f'takes edge and interior padding per dimension of {name} {text(value)}'
+    if any(isinstance(gap, int) and gap < 0 for gap in interior):
+        return f'takes interior padding of 0 or more, found {braces(interior)}'
+    # Each dimension with its edges and its gaps between elements
+    dims = [
+        lo + size + hi + max(size - 1, 0) * gap if known([lo, size, hi, gap]) else '?'
+        for lo, size, hi, gap in zip(low, value[1], high, interior)
+    ]
+    return typed(result, operands) or gives(dims, result, operands)
+
+
+def reverse(result, operands, attributes):
+    name, value = operands[0]
+    dims = numbers(attributes['dimensions'])
+    return misnumbered(dims, name, value) or elementwise(result, operands, attributes)
+
+
+def slice_ranges(result, operands, attributes):
+    name, value = operands[0]
+    ranges = [numbers(bounds) for bounds in attributes['slice']]
+    if len(ranges) != len(value[1]):
+        return f'takes one range per dimension of {name} {text(value)}, found {len(ranges)}'
+    dims = []
+    for (start, limit, stride), size in zip(ranges, value[1]):
+        if not known([start, limit, stride]):
+            dims.append('?')
+        elif stride < 1 or not within([start, limit], [limit, size]):
+            return f'takes ranges within {name} {text(value)}, found [{start}:{limit}:{stride}]'
+        else:
+            dims.append(-(-(limit - start) // stride))
+    return typed(result, operands) or gives(dims, result, operands)
+
+
+def dynamic_slice(result, operands, attributes):
+    (name, value), *indices = operands
+    sizes = numbers(attributes['dynamic_slice_sizes'])
+    if not within(sizes, value[1]):
+        return f'takes slice sizes within {name} {text(value)}, found {braces(sizes)}'
+    reason = indexes(name, value, indices)
+    return reason or typed(result, operands[:1]) or gives(sizes, result, operands[:1])
+
+
+def dynamic_update_slice(result, operands, attributes):
+    (name, value), (update, given), *indices = operands
+    if not within(given[1], value[1]):
+        return f'takes an update within {name} {text(value)}, found {update} {text(given)}'
+    reason = indexes(name, value, indices)
+    return reason or typed(result, operands[:2]) or gives(value[1], result, operands[:1])
+
+
+# A gather's dimension lists, in StableHLO's order
+GATHER_LISTS = [
+    'offset_dims',
+    'collapsed_slice_dims',
+    'operand_batching_dims',
+    'start_indices_batching_dims',
+    'start_index_map',
+]
+# The two a spec may leave out, empty then
+GATHER_DEFAULTS = {'operand_batching_dims': [], 'start_indices_batching_dims': []}
+
+
+def gather(result, operands, attributes):
+    (name, value), (index, indices) = operands
+    lists = {**GATHER_DEFAULTS, **attributes}
+    offset, collapsed, batching, index_batching, start = (
+        numbers(lists[key]) for key in GATHER_LISTS
+    )
+    sizes = numbers(attributes['slice_sizes'])
+    vector = int(attributes['index_vector_dim'])
+    if not known(offset + collapsed + batching + index_batching + start + sizes):
+        return typed(result, operands[:1])
+    if not within(sizes, value[1]):
+        return f'takes slice sizes within {name} {text(value)}, found {braces(sizes)}'
+    rank = len(indices[1])
+    if not 0 <= vector <= rank:
+        return f'takes an index_vector_dim at most the rank {rank} of {index} {text(indices)}'
+    # The index vector's length, 1 at the indices' rank
+    length = indices[1][vector] if vector < rank else 1
+    if isinstance(length, int) and len(start) != length:
+        return f'takes a start_index_map of {length} dimensions, found {braces(start)}'
+    reason = misnumbered(collapsed + batching, name, value) or misnumbered(start, name, value)
+    if reason:
+        return reason
+    # Each list of operand dimensions in order
+    for key, dims in zip(GATHER_LISTS, (offset, collapsed, batching)):
+        if dims != sorted(dims):
+            return f'takes {key} in order, found {braces(dims)}'
+    if any(sizes[dim] > 1 for dim in collapsed + batching):
+        found = braces(sizes)
+        return f'takes slice sizes of 0 or 1 in collapsed and batching dimensions, found {found}'
+    if len(index_batching) != len(batching) or vector in index_batching:
+        return (
+            'takes one indices batching dimension per operand batching dimension, '
+            'none equal to index_vector_dim'
+        )
+    reason = misnumbered(index_batching, index, indices)
+    if reason:
+        return reason
+    # The indices' batch dimensions, the slice's own at offset_dims
+    batch = [size for k, size in enumerate(indices[1]) if k != vector]
+    kept = [size for k, size in enumerate(sizes) if k not in collapsed + batching]
+    if len(offset) != len(kept) or not valid(offset, len(batch) + len(kept)):
+        found = braces(offset)
+        return f'takes {len(kept)} distinct offset_dims below the rank of its result, found {found}'
+    slices, batches = iter(kept), iter(batch)
+    dims = [next(slices) if k in offset else next(batches) for k in range(len(batch) + len(kept))]
+    return typed(result, operands[:1]) or gives(dims, result, operands)
+
+
 def reduce(result, operands, attributes):
     name, value = operands[0]
     dims = numbers(attributes['dimensions'])
@@ -307,6 +464,13 @@ RULES = {
     'reshape': reshape,
     'transpose': transpose,
     'broadcast': broadcast,
+    'concatenate': concatenate,
+    'pad': pad,
+    'reverse': reverse,
+    'slice': slice_ranges,
+    'dynamic_slice': dynamic_slice,
+    'dynamic_update_slice': dynamic_update_slice,
+    'gather': gather,
     'dot': dot,
     'reduce_add': reduce,
 }
