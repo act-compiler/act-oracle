@@ -4,6 +4,7 @@ from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE
+from .shapes import declared, disagreement
 from .template import generate_code, templates
 
 # Element types as a semantics spells them
@@ -39,6 +40,8 @@ class OracleVisitor(IDLV2Visitor):
         self.instruction = instruction
         # Each backtick expression's tree, by its node
         self.expressions = expressions
+        # Each value's type and dims, by name
+        self.values = {}
         self.instruction_lines = []
 
         self.op_to_template = {
@@ -65,6 +68,7 @@ class OracleVisitor(IDLV2Visitor):
         result_type_info = self.visit(ctx.result_type())
         lhs_type, lhs_shape = result_type_info
         op_name = ctx.OPERATION().getText()
+        self.values[lhs_name] = (lhs_type, declared(ctx.result_type()))
 
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
@@ -90,6 +94,12 @@ class OracleVisitor(IDLV2Visitor):
             attribute_info = self.visit(ctx.attributes())
             for attr_name, attr_value in attribute_info:
                 attributes[attr_name] = attr_value
+
+        # Refuse a line whose shapes or attributes disagree
+        operands = [(f"'%{name}'", self.values[name]) for name in operand_names]
+        reason = disagreement(op_name, self.values[lhs_name], operands, attributes)
+        if reason:
+            raise ValueError(f"{self.instruction}: {op_name} of '%{lhs_name}' {reason}")
 
         template_name = self.op_to_template[op_name]
         self.generate_from_template(

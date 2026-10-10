@@ -131,6 +131,140 @@ ENTRY {
         generate_oracle(acc)
 
 
+# Disagreeing semantics between 4 bytes, and their refusal
+DISAGREE = {
+    'operand shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[3] add(%In0, %In0);
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "add of '%a' takes operands of its shape u8[3], found '%In0' u8[4]",
+    ),
+    'operand type': (
+        """%In0 = u8[4] parameter(0);
+    %a = s8[4] convert(%In0);
+    ROOT %Out0 = u8[4] maximum(%In0, %a);""",
+        "maximum of '%Out0' takes operands of its type u8, found '%a' s8[4]",
+    ),
+    'copy type': (
+        """%In0 = u8[4] parameter(0);
+    %a = s8[4] copy(%In0);
+    ROOT %Out0 = u8[4] convert(%a);""",
+        "copy of '%a' takes operands of its type s8, found '%In0' u8[4]",
+    ),
+    'convert shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = f32[2] convert(%In0);
+    ROOT %Out0 = u8[4] bitcast_convert(%a);""",
+        "convert of '%a' gives f32[4] of '%In0' u8[4], not f32[2]",
+    ),
+    'reshape count': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[3] reshape(%In0);
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "reshape of '%a' takes an operand of 3 elements, found '%In0' u8[4]",
+    ),
+    'bitcast shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u16[1] bitcast_convert(%a);
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "bitcast_convert of '%b' gives u16[2] of '%a' u8[2,2], not u16[1]",
+    ),
+    'bitcast width': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = f32[2] bitcast_convert(%a);
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "bitcast_convert of '%b' takes an operand whose last dimension is 4, found '%a' u8[2,2]",
+    ),
+    'transpose permutation': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2,2] transpose(%a), dimensions={0};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "transpose of '%b' takes a permutation of the 2 dimensions of '%a' u8[2,2], found {0}",
+    ),
+    'transpose shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = u8[1,4] transpose(%a), dimensions={1,0};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "transpose of '%b' gives u8[4,1] of '%a' u8[1,4], not u8[1,4]",
+    ),
+    'broadcast dimensions': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2,2,2] broadcast(%a), dimensions={0};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        (
+            "broadcast of '%b' takes one distinct dimension below 3 per dimension of '%a' u8[2,2], "
+            'found {0}'
+        ),
+    ),
+    'broadcast size': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[3,4] broadcast(%In0), dimensions={0};
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "broadcast of '%a' maps dimension 0 of '%In0' u8[4] to one of 3",
+    ),
+    'reduce dimensions': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2] reduce_add(%a), dimensions={2};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "reduce_add of '%b' takes distinct dimensions below the rank 2 of '%a' u8[2,2], found {2}",
+    ),
+    'reduce shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[4] reduce_add(%a), dimensions={1};
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "reduce_add of '%b' gives u8[2] of '%a' u8[2,2], not u8[4]",
+    ),
+    'dot pairs': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[1,4] reshape(%In0);
+    %c = u8[2,4] dot(%a, %b), lhs_contracting_dims={1}, rhs_contracting_dims={0};
+    ROOT %Out0 = u8[4] reshape(%c);""",
+        "dot of '%c' pairs dimension 1 of '%a' u8[2,2] with dimension 0 of '%b' u8[1,4]",
+    ),
+    'dot lists': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2] dot(%a, %a), lhs_batch_dims={0}, lhs_contracting_dims={1}, rhs_contracting_dims={0};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "dot of '%b' takes as many lhs as rhs batch and contracting dimensions",
+    ),
+    'dot dimensions': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2] dot(%a, %a), lhs_contracting_dims={2}, rhs_contracting_dims={0};
+    ROOT %Out0 = u8[4] reshape(%b);""",
+        "dot of '%b' takes distinct dimensions below the rank 2 of '%a' u8[2,2], found {2}",
+    ),
+    'dot shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[4] dot(%a, %a), lhs_contracting_dims={1}, rhs_contracting_dims={0};
+    ROOT %Out0 = u8[4] copy(%b);""",
+        "dot of '%b' gives u8[2,2] of '%a' u8[2,2] and '%a' u8[2,2], not u8[4]",
+    ),
+}
+
+
+@pytest.mark.parametrize('case', DISAGREE)
+def test_disagreeing_shapes_and_attributes_refused(case):
+    lines, message = DISAGREE[case]
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['4']]])
+    instr.add_semantics(f'ENTRY {{\n    {lines}\n}}')
+    with pytest.raises(ValueError, match=re.escape(f'refused: {message}')):
+        generate_oracle(acc)
+
+
 # Types the grammar lexes that the oracle does not lower
 UNLOWERED_TYPES = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
 
