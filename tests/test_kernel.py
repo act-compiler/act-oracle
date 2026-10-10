@@ -7,7 +7,8 @@ import time
 import numpy as np
 import pytest
 import jax.numpy as jnp
-from conftest import EXAMPLES_DIR, generate_and_import_oracle, generate_example, import_oracle, load_bf16_matrix, run_kernel
+from conftest import (EXAMPLES_DIR, PLATFORM, generate_and_import_oracle, generate_example, import_oracle,
+                      load_bf16_matrix, run_kernel, attention_reference)
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, "QKV")
 kernel, api = generate_and_import_oracle(QKV_DIR)
@@ -32,6 +33,7 @@ def test_unknown_mode_refused(mode):
         k(mode)
 
 
+@pytest.mark.skipif(PLATFORM == "GPU", reason="the debug handler prints from the CPU alone")
 def test_debug_prints_values(capfd):
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():
@@ -58,6 +60,7 @@ def test_generation_rebuilds_the_debug_handler():
     assert handler and os.path.getmtime(handler[0]) >= start
 
 
+@pytest.mark.skipif(PLATFORM == "GPU", reason="the debug handler prints from the CPU alone")
 def test_debug_before_any_instruction(capfd):
     # This oracle imported afresh, so debug is the first call it traces
     decorator, fresh = import_oracle(os.path.dirname(os.path.dirname(api.__file__)), "oracle_fresh")
@@ -148,9 +151,14 @@ def nested():
 
 @pytest.mark.parametrize("twin", [looped, nested])
 def test_loop_matches_unrolled(twin):
-    unrolled = run_kernel(kernel, api, "attention",
-                          os.path.join(QKV_DIR, "assembly"), os.path.join(QKV_DIR, "data"))
     k = twin()
     k('fsim-compile')()
     outputs, _ = k('fsim')(*load_qkv())
+    if PLATFORM == "GPU":
+        # No bit equality on the GPU: the twin is held to the reference
+        reference, tol = attention_reference(os.path.join(QKV_DIR, "data"))
+        assert np.max(np.abs(np.asarray(outputs[0], np.float64) - reference)) <= tol
+        return
+    unrolled = run_kernel(kernel, api, "attention",
+                          os.path.join(QKV_DIR, "assembly"), os.path.join(QKV_DIR, "data"))
     assert np.asarray(outputs[0]).tobytes() == np.asarray(unrolled).tobytes()

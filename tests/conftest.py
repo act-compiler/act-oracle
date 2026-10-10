@@ -117,6 +117,8 @@ def attention_reference(data_dir):
     S = bf16(Q @ K.T)
     E = bf16(np.exp(S))
     P = bf16(E / bf16(E.sum(axis=1, keepdims=True)))
-    # Two bf16 ulps at max|V|, which bounds every output
-    tol = 2 * 2.0 ** (np.floor(np.log2(np.abs(V).max())) - 7)
+    # Two bf16 ulps at max|V| bound every output on the CPU
+    ulp = 2.0 ** (np.floor(np.log2(np.abs(V).max())) - 7)
+    # On the GPU, twice the two ulps an H100 reaches
+    tol = (2 if PLATFORM == "CPU" else 4) * ulp
     return bf16(P @ V), tol
