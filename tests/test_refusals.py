@@ -110,6 +110,27 @@ def test_outputs_with_no_semantics_refused():
         generate_oracle(acc)
 
 
+@pytest.mark.parametrize('kind', ['input', 'output'])
+def test_value_with_no_region_refused(kind):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    # The other kind's region alone
+    region = [['d0', ['@a.addr'], ['2']]]
+    if kind == 'input':
+        instr.set_outputs(region)
+    else:
+        instr.set_inputs(region)
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In0);
+}
+""")
+    value = '%In0' if kind == 'input' else '%Out0'
+    with pytest.raises(ValueError, match=f"refused: '{value}' has no {kind} region"):
+        generate_oracle(acc)
+
+
 # Types the grammar lexes that the oracle does not lower
 UNLOWERED_TYPES = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
 
