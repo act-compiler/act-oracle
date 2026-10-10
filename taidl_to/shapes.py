@@ -1,7 +1,7 @@
 """The shape and type each lowered word gives its result, checked where the spec writes integers
 
 A value is its element type and its dims, each dim an int or an expression's text.
-A list attribute holds decimal text, which numbers reads as ints.
+A list attribute holds decimal text, which numbers reads as ints, or an expression's text.
 """
 
 # Bytes per element in memory, one for a pred
@@ -30,8 +30,13 @@ def declared(result_type) -> list:
 
 
 def numbers(entries) -> list:
-    """An attribute list's entries, as ints."""
-    return [int(entry) for entry in entries]
+    """An attribute list's entries, each an int or an expression's text."""
+    return [int(entry) if entry.lstrip('-').isdigit() else entry for entry in entries]
+
+
+def known(entries) -> bool:
+    """Whether every entry is an integer, none an expression's."""
+    return all(isinstance(entry, int) for entry in entries)
 
 
 def text(value) -> str:
@@ -62,7 +67,9 @@ def count(dims):
 
 
 def valid(dims, rank) -> bool:
-    """Whether dimension numbers are distinct and below a rank."""
+    """Whether dimension numbers are distinct and below a rank, or one is an expression."""
+    if not known(dims):
+        return True
     return len(set(dims)) == len(dims) and all(0 <= dim < rank for dim in dims)
 
 
@@ -174,6 +181,8 @@ def reshape(result, operands, attributes):
 def transpose(result, operands, attributes):
     name, value = operands[0]
     permutation = numbers(attributes['dimensions'])
+    if not known(permutation):
+        return typed(result, operands)
     if sorted(permutation) != list(range(len(value[1]))):
         rank = len(value[1])
         return (
@@ -186,6 +195,8 @@ def transpose(result, operands, attributes):
 def broadcast(result, operands, attributes):
     name, value = operands[0]
     mapped = numbers(attributes['dimensions'])
+    if not known(mapped):
+        return typed(result, operands)
     if len(mapped) != len(value[1]) or not valid(mapped, len(result[1])):
         return (
             f'takes one distinct dimension below {len(result[1])} per dimension of '
@@ -201,6 +212,8 @@ def broadcast(result, operands, attributes):
 def reduce(result, operands, attributes):
     name, value = operands[0]
     dims = numbers(attributes['dimensions'])
+    if not known(dims):
+        return typed(result, operands)
     kept = [size for k, size in enumerate(value[1]) if k not in dims]
     return (
         misnumbered(dims, name, value) or typed(result, operands) or gives(kept, result, operands)
@@ -212,6 +225,8 @@ def dot(result, operands, attributes):
     # The batch lists alone may be left out
     lb, rb = (numbers(attributes.get(f'{side}_batch_dims', [])) for side in ('lhs', 'rhs'))
     lc, rc = (numbers(attributes[f'{side}_contracting_dims']) for side in ('lhs', 'rhs'))
+    if not known(lb + lc + rb + rc):
+        return None
     if len(lb) != len(rb) or len(lc) != len(rc):
         return 'takes as many lhs as rhs batch and contracting dimensions'
     reason = misnumbered(lb + lc, lhs, a) or misnumbered(rb + rc, rhs, b)

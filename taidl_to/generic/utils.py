@@ -202,10 +202,8 @@ def mlir_literal(value, typ, shown=None):
 
 
 def dims_list(dims):
-    """{1, 0} as text, a set or {} -> [1, 0], keeping a text's order"""
-    if isinstance(dims, (set, dict)):
-        return str(sorted(dims))
-    return '[' + ', '.join(d.strip() for d in dims.strip('{} ').split(',') if d.strip()) + ']'
+    """A list of dimensions as StableHLO writes it, in its order"""
+    return '[' + ', '.join(str(d) for d in dims) + ']'
 
 
 # Each sh_* helper records its result's MLIR type in ssa_types

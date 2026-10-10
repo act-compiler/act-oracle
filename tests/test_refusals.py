@@ -433,24 +433,6 @@ def test_tile_typed_unlike_its_data_model_refused(value):
         generate_oracle(acc)
 
 
-def test_expression_in_a_list_attribute_refused():
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('refused', ['k'], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['4']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['4']]])
-    instr.add_semantics("""
-ENTRY {
-    %In0 = u8[4] parameter(0);
-    %a = u8[2,2] reshape(%In0);
-    %b = u8[2,2] transpose(%a), dimensions={`@c.k`, 0};
-    ROOT %Out0 = u8[4] reshape(%b);
-}
-""")
-    message = "refused: an expression in 'dimensions' is not supported by the oracle"
-    with pytest.raises(NotImplementedError, match=message):
-        generate_oracle(acc)
-
-
 # Module state a generated function reads or sets
 SHARED_NAMES = [
     'comp_attrs',

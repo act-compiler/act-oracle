@@ -91,6 +91,11 @@ COMPARE_TYPES = {
 CHLO = ('mulhi', 'erf', 'asin', 'acos', 'sinh', 'cosh', 'asinh', 'acosh', 'atanh')
 
 
+def source(value):
+    """A value as Python: a list's items in brackets, else its text"""
+    return value if isinstance(value, str) else '[' + ', '.join(value) + ']'
+
+
 def generic_attributes(word, attributes):
     """A word's attributes as StableHLO names them, a Python dict evaluated at each call;
     a quoted value is MLIR text"""
@@ -210,28 +215,25 @@ class OracleVisitor(IDLV2Visitor):
         elif template_name == 'BROADCAST':
             mapping['A'] = f"'{operand_names[0]}'"
             # broadcast maps operand dims by position; keep the spec's order
-            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
+            mapping['dims'] = source(attributes['dimensions'])
 
         elif template_name == 'TRANSPOSE':
             mapping['in'] = f"'{operand_names[0]}'"
-            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
+            mapping['dims'] = source(attributes['dimensions'])
 
         elif template_name == 'DOT':
             mapping['A'] = f"'{operand_names[0]}'"
             mapping['B'] = f"'{operand_names[1]}'"
 
             # dot pairs dimension lists by position; keep the spec's order
-            def format_dims(value):
-                return "'{" + ', '.join(str(v) for v in value) + "}'"
-
-            mapping['lb'] = format_dims(attributes.get('lhs_batch_dims', []))
-            mapping['lc'] = format_dims(attributes['lhs_contracting_dims'])
-            mapping['rb'] = format_dims(attributes.get('rhs_batch_dims', []))
-            mapping['rc'] = format_dims(attributes['rhs_contracting_dims'])
+            mapping['lb'] = source(attributes.get('lhs_batch_dims', []))
+            mapping['lc'] = source(attributes['lhs_contracting_dims'])
+            mapping['rb'] = source(attributes.get('rhs_batch_dims', []))
+            mapping['rc'] = source(attributes['rhs_contracting_dims'])
 
         elif template_name == 'REDUCE_ADD':
             mapping['A'] = f"'{operand_names[0]}'"
-            mapping['dims'] = '{' + ', '.join(str(d) for d in attributes['dimensions']) + '}'
+            mapping['dims'] = source(attributes['dimensions'])
             template_name = 'REDUCE'
 
         elif template_name == 'CONSTANT':
@@ -291,16 +293,14 @@ class OracleVisitor(IDLV2Visitor):
         return str(int(text)) if re.fullmatch(r'-?[0-9]+', text) else text
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
-        values = []
-        for value_ctx in ctx.value():
-            if value_ctx.EXPRESSION():
-                # The oracle lowers a list of integers alone
-                name = ctx.parentCtx.parentCtx.name().getText()
-                raise NotImplementedError(
-                    f"{self.instruction}: an expression in '{name}' is not supported by the oracle"
-                )
-            values.append(value_ctx.getText())
-        return values
+        return [self.integer_source(value_ctx) for value_ctx in ctx.value()]
+
+    def integer_source(self, ctx):
+        """An integer as Python: a literal's value, or an expression evaluated at each call"""
+        if ctx.EXPRESSION():
+            return python(self.expressions[ctx.EXPRESSION()])
+        # Drop a literal's leading zeros, which Python refuses
+        return str(int(ctx.getText()))
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
         # Refuse by name a type the oracle does not lower
@@ -317,11 +317,7 @@ class OracleVisitor(IDLV2Visitor):
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
-        # An expression as Python evaluated at each call
-        dims = [
-            python(self.expressions[dim.EXPRESSION()]) if dim.EXPRESSION() else dim.INT().getText()
-            for dim in ctx.dim()
-        ]
+        dims = [self.integer_source(dim) for dim in ctx.dim()]
         typ = ctx.parentCtx.TYPE().getText()
         return (', '.join(dims), typ)
 

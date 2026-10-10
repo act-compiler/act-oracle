@@ -233,8 +233,7 @@ output.append(line)
 ### TEMPLATE: TRANSPOSE ###
 in_loc = parameter_util(global_counters, {{in}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-dims = '{{{dims}}}'
-dims = dims.replace("'", '')
+dims = {{dims}}
 line = sh_transpose(lhs_loc, lhs_type, in_loc, dims, ssa_types)
 output.append(line)
 
@@ -248,7 +247,7 @@ output.append(line)
 ### TEMPLATE: BROADCAST ###
 b_loc = parameter_util(global_counters, {{A}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
-dims = '{{{dims}}}'
+dims = {{dims}}
 line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
