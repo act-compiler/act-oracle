@@ -84,8 +84,7 @@ class OracleVisitor(IDLV2Visitor):
         }
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
-            if len(operand_names) > 0:
-                mapping['in'] = f"'{operand_names[0]}'"
+            mapping['in'] = f"'{operand_names[0]}'"
 
         elif template_name in [
             'ADD',
@@ -96,58 +95,34 @@ class OracleVisitor(IDLV2Visitor):
             'MINIMUM',
             'XOR',
         ]:
-            if len(operand_names) >= 2:
-                mapping['A'] = f"'{operand_names[0]}'"
-                mapping['B'] = f"'{operand_names[1]}'"
+            mapping['A'] = f"'{operand_names[0]}'"
+            mapping['B'] = f"'{operand_names[1]}'"
 
         elif template_name == 'BROADCAST':
-            if len(operand_names) > 0:
-                mapping['A'] = f"'{operand_names[0]}'"
+            mapping['A'] = f"'{operand_names[0]}'"
             # broadcast maps operand dims by position; keep the spec's order
-            dims = attributes['dimensions']
-            if isinstance(dims, list):
-                mapping['dims'] = ', '.join(str(d) for d in dims)
-            else:
-                mapping['dims'] = str(dims)
+            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
 
         elif template_name == 'TRANSPOSE':
-            if len(operand_names) > 0:
-                mapping['in'] = f"'{operand_names[0]}'"
-            if 'dimensions' in attributes:
-                dims = attributes['dimensions']
-                if isinstance(dims, list):
-                    mapping['dims'] = ', '.join(str(d) for d in dims)
-                else:
-                    mapping['dims'] = str(dims)
+            mapping['in'] = f"'{operand_names[0]}'"
+            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
 
         elif template_name == 'DOT':
-            if len(operand_names) >= 2:
-                mapping['A'] = f"'{operand_names[0]}'"
-                mapping['B'] = f"'{operand_names[1]}'"
+            mapping['A'] = f"'{operand_names[0]}'"
+            mapping['B'] = f"'{operand_names[1]}'"
 
             # dot pairs dimension lists by position; keep the spec's order
             def format_dims(value):
-                if isinstance(value, list):
-                    return "'{" + ', '.join(str(v) for v in value) + "}'"
-                elif isinstance(value, str):
-                    return value
+                return "'{" + ', '.join(str(v) for v in value) + "}'"
 
             mapping['lb'] = format_dims(attributes.get('lhs_batch_dims', []))
-            mapping['lc'] = format_dims(attributes.get('lhs_contracting_dims', [1]))
+            mapping['lc'] = format_dims(attributes['lhs_contracting_dims'])
             mapping['rb'] = format_dims(attributes.get('rhs_batch_dims', []))
-            mapping['rc'] = format_dims(attributes.get('rhs_contracting_dims', [0]))
+            mapping['rc'] = format_dims(attributes['rhs_contracting_dims'])
 
         elif template_name == 'REDUCE_ADD':
-            assert len(operand_names) == 1
             mapping['A'] = f"'{operand_names[0]}'"
-            if 'dimensions' in attributes:
-                dims = attributes['dimensions']
-                if isinstance(dims, list):
-                    mapping['dims'] = '{' + ', '.join(str(d) for d in dims) + '}'
-                else:
-                    mapping['dims'] = '{' + str(dims) + '}'
-            else:
-                mapping['dims'] = '{}'
+            mapping['dims'] = '{' + ', '.join(str(d) for d in attributes['dimensions']) + '}'
             template_name = 'REDUCE'
 
         template_code = generate_code(templates[template_name], mapping)
