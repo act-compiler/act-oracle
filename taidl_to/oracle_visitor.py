@@ -11,10 +11,11 @@ from .template import generate_code, templates
 
 # Element types as a semantics spells them
 FLOATS = ('f64', 'f32', 'f16', 'bf16')
-INTEGERS = ('u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64')
+SIGNED = ('s8', 's16', 's32', 's64')
+INTEGERS = ('u8', 'u16', 'u32', 'u64', *SIGNED)
 EVERY = (*FLOATS, *INTEGERS, 'pred')
 
-# Each word's element types, at its result
+# Each word's element types, at its first operand or result
 TYPES = {
     'reshape': EVERY,
     'convert': EVERY,
@@ -34,7 +35,62 @@ TYPES = {
     'reduce_add': EVERY,
     'constant': EVERY,
     'iota': FLOATS + INTEGERS,
+    'abs': (*FLOATS, *SIGNED),
+    'negate': FLOATS + INTEGERS,
+    'sign': (*FLOATS, *SIGNED),
+    'mulhi': INTEGERS,
+    'remainder': FLOATS + INTEGERS,
+    'power': FLOATS + INTEGERS,
+    'sqrt': FLOATS,
+    'rsqrt': FLOATS,
+    'cbrt': FLOATS,
+    'exponential_minus_one': FLOATS,
+    'log': FLOATS,
+    'log_plus_one': FLOATS,
+    'logistic': FLOATS,
+    'erf': FLOATS,
+    'sine': FLOATS,
+    'cosine': FLOATS,
+    'tan': FLOATS,
+    'asin': FLOATS,
+    'acos': FLOATS,
+    'atan2': FLOATS,
+    'sinh': FLOATS,
+    'cosh': FLOATS,
+    'tanh': FLOATS,
+    'asinh': FLOATS,
+    'acosh': FLOATS,
+    'atanh': FLOATS,
+    'floor': FLOATS,
+    'ceil': FLOATS,
+    'round_nearest_afz': FLOATS,
+    'round_nearest_even': FLOATS,
+    'and': (*INTEGERS, 'pred'),
+    'or': (*INTEGERS, 'pred'),
+    'not': (*INTEGERS, 'pred'),
+    'shift_left': INTEGERS,
+    'shift_right_logical': INTEGERS,
+    'shift_right_arithmetic': INTEGERS,
+    'popcnt': INTEGERS,
+    'count_leading_zeros': INTEGERS,
+    'is_finite': FLOATS,
+    'reduce_precision': FLOATS,
 }
+
+# The words StableHLO lacks, which CHLO holds
+CHLO = ('mulhi', 'erf', 'asin', 'acos', 'sinh', 'cosh', 'asinh', 'acosh', 'atanh')
+
+
+def generic_attributes(word, attributes):
+    """A word's attributes as StableHLO names them, a Python dict evaluated at each call;
+    a quoted value is MLIR text"""
+    if word == 'reduce_precision':
+        bits = ('exponent_bits', 'mantissa_bits')
+        given = {name: repr(f'{attributes[name]} : i32') for name in bits}
+    else:
+        # Any other word's attributes have StableHLO's names
+        given = attributes
+    return '{' + ', '.join(f"'{name}': {value}" for name, value in given.items()) + '}'
 
 
 class OracleVisitor(IDLV2Visitor):
@@ -76,11 +132,6 @@ class OracleVisitor(IDLV2Visitor):
             raise NotImplementedError(
                 f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
             )
-        if lhs_type not in TYPES[op_name]:
-            raise NotImplementedError(
-                f"{self.instruction}: operation '{op_name}' at type '{lhs_type}' "
-                'is not supported by the oracle'
-            )
 
         operand_names = []
         if op_name == 'constant':
@@ -90,14 +141,22 @@ class OracleVisitor(IDLV2Visitor):
             for operand_value in operand_info:
                 operand_names.append(operand_value.lstrip('%'))
 
+        # A word at a type it lacks, constant literals aside
+        values = [] if op_name == 'constant' else operand_names
+        typ = self.values[values[0]][0] if values else lhs_type
+        if typ not in TYPES[op_name]:
+            raise NotImplementedError(
+                f"{self.instruction}: operation '{op_name}' at type '{typ}' "
+                'is not supported by the oracle'
+            )
+
         attributes = {}
         if ctx.attributes():
             attribute_info = self.visit(ctx.attributes())
             for attr_name, attr_value in attribute_info:
                 attributes[attr_name] = attr_value
 
-        # Refuse disagreeing shapes or attributes, a constant's literal aside
-        values = [] if op_name == 'constant' else operand_names
+        # Refuse a line whose shapes or attributes disagree
         operands = [(f"'%{name}'", self.values[name]) for name in values]
         reason = disagreement(op_name, self.values[lhs_name], operands, attributes)
         if reason:
@@ -119,9 +178,10 @@ class OracleVisitor(IDLV2Visitor):
             mapping['in'] = f"'{operand_names[0]}'"
 
         elif template_name == 'GENERIC':
-            mapping['op'] = f"'stablehlo.{op_name}'"
+            dialect = 'chlo' if op_name in CHLO else 'stablehlo'
+            mapping['op'] = f"'{dialect}.{op_name}'"
             mapping['operands'] = repr(operand_names)
-            mapping['attributes'] = '{}'
+            mapping['attributes'] = generic_attributes(op_name, attributes)
 
         elif template_name == 'BROADCAST':
             mapping['A'] = f"'{operand_names[0]}'"

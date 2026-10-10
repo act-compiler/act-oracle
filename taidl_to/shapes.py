@@ -110,6 +110,17 @@ def iota(result, operands, attributes):
     return f'takes an iota_dimension below the rank {rank} of its result, found {dim}'
 
 
+def is_finite(result, operands, attributes):
+    return gives(operands[0][1][1], result, operands, 'pred')
+
+
+def reduce_precision(result, operands, attributes):
+    exponent, mantissa = int(attributes['exponent_bits']), int(attributes['mantissa_bits'])
+    if exponent < 1 or mantissa < 0:
+        return f'takes at least 1 exponent bit and 0 mantissa bits, found {exponent} and {mantissa}'
+    return elementwise(result, operands, attributes)
+
+
 def convert(result, operands, attributes):
     return gives(operands[0][1][1], result, operands)
 
@@ -199,20 +210,60 @@ RULES = {
     'iota': iota,
     **dict.fromkeys(
         [
+            'abs',
+            'negate',
+            'sign',
             'add',
             'subtract',
             'multiply',
+            'mulhi',
             'divide',
+            'remainder',
             'maximum',
             'minimum',
+            'power',
+            'sqrt',
+            'rsqrt',
+            'cbrt',
             'exponential',
+            'exponential_minus_one',
+            'log',
+            'log_plus_one',
+            'logistic',
+            'erf',
+            'sine',
+            'cosine',
+            'tan',
+            'asin',
+            'acos',
+            'atan2',
+            'sinh',
+            'cosh',
+            'tanh',
+            'asinh',
+            'acosh',
+            'atanh',
+            'floor',
+            'ceil',
+            'round_nearest_afz',
+            'round_nearest_even',
+            'and',
+            'or',
             'xor',
+            'not',
+            'shift_left',
+            'shift_right_logical',
+            'shift_right_arithmetic',
+            'popcnt',
+            'count_leading_zeros',
             'copy',
         ],
         elementwise,
     ),
+    'is_finite': is_finite,
     'convert': convert,
     'bitcast_convert': bitcast_convert,
+    'reduce_precision': reduce_precision,
     'reshape': reshape,
     'transpose': transpose,
     'broadcast': broadcast,

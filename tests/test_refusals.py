@@ -251,6 +251,30 @@ DISAGREE = {
     ROOT %Out0 = u8[4] add(%In0, %a);""",
         "iota of '%a' takes an iota_dimension below the rank 1 of its result, found 1",
     ),
+    'is_finite type': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[1] is_finite(%b);
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "is_finite of '%c' gives pred[1] of '%b' f32[1], not f32[1]",
+    ),
+    'reduce_precision bits': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[1] reduce_precision(%b), exponent_bits=0, mantissa_bits=3;
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "reduce_precision of '%c' takes at least 1 exponent bit and 0 mantissa bits, found 0 and 3",
+    ),
+    'atan2 shape': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[2] atan2(%b, %b);
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "atan2 of '%c' takes operands of its shape f32[2], found '%b' f32[1]",
+    ),
     'input tile': (
         """%In0 = u8[8] parameter(0);
     ROOT %Out0 = u8[4] reshape(%In0);""",
