@@ -6,8 +6,10 @@ from .template import generate_code, init_templates, templates
 
 
 class OracleVisitor(IDLV2Visitor):
-    def __init__(self) -> None:
+    def __init__(self, instruction) -> None:
         super().__init__()
+        # The instruction whose semantics this visits, for a refusal
+        self.instruction = instruction
         self.instruction_lines = []
         init_templates()
 
@@ -29,10 +31,6 @@ class OracleVisitor(IDLV2Visitor):
             'dot': 'DOT',
             'reduce_add': 'REDUCE_ADD',
         }
-
-    def visitModule(self, ctx: IDLV2Parser.ModuleContext):
-        self.entry_name = ctx.IDENTIFIER().getText()
-        return self.visitChildren(ctx)
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
         lhs_name = ctx.IDENTIFIER().getText().lstrip('%')
@@ -64,7 +62,7 @@ class OracleVisitor(IDLV2Visitor):
 
         if op_name not in self.op_to_template:
             raise NotImplementedError(
-                f"{self.entry_name}: operation '{op_name}' is not supported by the oracle"
+                f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
             )
         template_name = self.op_to_template[op_name]
         self.generate_from_template(

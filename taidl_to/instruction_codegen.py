@@ -115,7 +115,7 @@ def generate_api_function(instruction: Instruction) -> str:
         update += '\n' + line
 
     inputs = generate_inputs(instruction)
-    semantics = generate_semantic_code(instruction.instr_semantics_ast)
+    semantics = generate_semantic_code(instruction.instr_semantics_ast, instruction.instruction)
     outputs = generate_outputs(instruction)
 
     parts = []
