@@ -21,7 +21,7 @@ def generate_inputs(instruction: Instruction) -> str:
     init_templates()
     output = ''
 
-    for counter, slice_spec in enumerate(instruction.instr_inputs, start=1):
+    for counter, slice_spec in enumerate(instruction.instr_inputs):
         assert len(slice_spec) == 3, 'Wrong input slice formatting.'
 
         buffer_name = slice_spec[0]
