@@ -110,7 +110,7 @@ def debug(prefix: str, data: str) -> None:
 
 		data_name = data.split("[")[0]
 
-		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, data_name)
+		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, data_name)
 		data_dims = ast.literal_eval('[' + global_counters[data_name]["type"].split("[")[1].split("]")[0] + ']')
 		debug_dims = ast.literal_eval('[' + data.split("[")[1].split("]")[0] + ']')
 		slice_configs = []
@@ -128,12 +128,12 @@ def debug(prefix: str, data: str) -> None:
 		line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {}, ssa_types)
 		output.append(line)
 
-		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice')
+		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice')
 		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
 		line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 		output.append(line)
 
-		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice_f64')
+		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice_f64')
 		debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
 		output.append(f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>')
 		output.append(f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @{__package__}.print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>')
@@ -169,15 +169,15 @@ instruction_scopes[cur_scope] += (output)
 global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: SLICE_LOAD ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{rhs_name}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 slice_configs = {{slice}}
 line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, comp_attrs, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SLICE_STORE ###
-rhs_update = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{lhs}})
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{rhs_name}})
+rhs_update = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{lhs}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{rhs_name}})
 start_indices = {{slice}}
 lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices,
@@ -185,45 +185,45 @@ lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices,
 output += lines
 
 ### TEMPLATE: RESHAPE ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_cast("reshape", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: CONVERT ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: COPY ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_copy(lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: EXP ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_unary("exponential", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BITCAST_CONVERT ###
-rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_cast("bitcast_convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DOT ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_dot(lhs_loc, lhs_type, a_loc, b_loc,
 			  {{lb}}, {{lc}}, {{rb}}, {{rc}}, ssa_types)
 output.append(line)
 
 ### TEMPLATE: TRANSPOSE ###
-in_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
+in_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dims = "{{{dims}}}"
 dims = dims.replace("'","")
@@ -231,64 +231,64 @@ line = sh_transpose(lhs_loc, lhs_type, in_loc, dims, ssa_types)
 output.append(line)
 
 ### TEMPLATE: ADD ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("add", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SUBTRACT ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("subtract", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MULTIPLY ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("multiply", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DIVIDE ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("divide", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: REDUCE ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
+a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dim = {{dims}}
 line = sh_reduce("add", lhs_loc, lhs_type, a_loc, dim, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BROADCAST ###
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
+b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dims = "{{{dims}}}"
 line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MAXIMUM ###
-rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("maximum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MINIMUM ###
-rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("minimum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: XOR ###
-rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
+rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
+rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_binary("xor", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
