@@ -17,6 +17,8 @@ dependencies = [
     "numpy>=2.0",
     "jax==0.10.2",
     "jaxlib==0.10.2",
+    "nanobind>=2.8.0",
+    "cmake>=3.15",
 ]
 
 [tool.setuptools.packages.find]
