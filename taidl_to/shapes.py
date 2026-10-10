@@ -106,6 +106,13 @@ def gives(dims, result, operands, typ=None):
     return f'gives {text((typ, dims))} of {given}, not {text(result)}'
 
 
+def square(name, value):
+    """A value whose last two dimensions are not a square matrix's."""
+    if len(value[1]) >= 2 and agree(value[1][-1:], value[1][-2:-1]):
+        return None
+    return f'takes square matrices in the last two dimensions, found {name} {text(value)}'
+
+
 def indexes(name, value, indices):
     """One index of rank 0 per dimension of an operand, every index of one type."""
     if len(indices) != len(value[1]):
@@ -398,6 +405,41 @@ def dot(result, operands, attributes):
     return gives([a[1][k] for k in lb] + others, result, operands)
 
 
+def cholesky(result, operands, attributes):
+    name, value = operands[0]
+    return square(name, value) or elementwise(result, operands, attributes)
+
+
+def triangular_solve(result, operands, attributes):
+    (lhs, a), (rhs, b) = operands
+    reason = square(lhs, a)
+    if reason:
+        return reason
+    # From the left, b's rows meet a; else its columns
+    left = attributes.get('left_side', 'false') == 'true'
+    met = b[1][-2:-1] if left else b[1][-1:]
+    if len(b[1]) != len(a[1]) or not agree(b[1][:-2] + met, a[1][:-2] + a[1][-1:]):
+        side = 'rows' if left else 'columns'
+        return f'takes a right side whose {side} meet {lhs} {text(a)}, found {rhs} {text(b)}'
+    return typed(result, operands) or gives(b[1], result, operands)
+
+
+def batch_norm_inference(result, operands, attributes):
+    (name, value), *vectors = operands
+    rank, feature = len(value[1]), int(attributes['feature_index'])
+    if not 0 <= feature < rank:
+        return (
+            f'takes a feature_index below the rank {rank} of {name} {text(value)}, found {feature}'
+        )
+    for vector, given in vectors:
+        if not agree(given[1], [value[1][feature]]):
+            return (
+                f'takes vectors of the {value[1][feature]} features of {name} {text(value)}, '
+                f'found {vector} {text(given)}'
+            )
+    return typed(result, operands) or gives(value[1], result, operands[:1])
+
+
 # The check of each word, by name
 RULES = {
     'constant': free,
@@ -472,6 +514,9 @@ RULES = {
     'dynamic_update_slice': dynamic_update_slice,
     'gather': gather,
     'dot': dot,
+    'cholesky': cholesky,
+    'triangular_solve': triangular_solve,
+    'batch_norm_inference': batch_norm_inference,
     **dict.fromkeys(
         [
             'reduce_add',

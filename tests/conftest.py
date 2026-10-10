@@ -139,6 +139,9 @@ LOWERED = {
     'reverse': EVERY,
     'dynamic_update_slice': EVERY,
     'gather': EVERY,
+    'cholesky': FLOATS,
+    'triangular_solve': FLOATS,
+    'batch_norm_inference': FLOATS,
 }
 
 

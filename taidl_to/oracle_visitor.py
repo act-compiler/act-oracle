@@ -91,6 +91,9 @@ TYPES = {
     'reverse': EVERY,
     'dynamic_update_slice': EVERY,
     'gather': EVERY,
+    'cholesky': FLOATS,
+    'triangular_solve': FLOATS,
+    'batch_norm_inference': FLOATS,
 }
 
 # The StableHLO op each reduce applies
@@ -123,9 +126,9 @@ def source(value):
     return value if isinstance(value, str) else '[' + ', '.join(value) + ']'
 
 
-def generic_attributes(word, attributes):
+def generic_attributes(word, attributes, instruction):
     """A word's attributes as StableHLO names them, a Python dict evaluated at each call;
-    a quoted value is MLIR text"""
+    a quoted value is MLIR text, and a flag left out is false, as in XLA-HLO"""
     if word == 'reduce_precision':
         bits = ('exponent_bits', 'mantissa_bits')
         given = {name: repr(f'{attributes[name]} : i32') for name in bits}
@@ -146,6 +149,21 @@ def generic_attributes(word, attributes):
         dims = ', '.join(f'{name}={source(lists[name])}' for name in GATHER_LISTS)
         given = {'dimension_numbers': f'gather_numbers({attributes["index_vector_dim"]}, {dims})'}
         given['slice_sizes'] = attributes['slice_sizes']
+    elif word == 'cholesky':
+        given = {'lower': repr(attributes.get('lower', 'false'))}
+    elif word == 'triangular_solve':
+        flags = ('left_side', 'lower', 'unit_diagonal')
+        given = {name: repr(attributes.get(name, 'false')) for name in flags}
+        given['transpose_a'] = repr(f'#stablehlo<transpose {attributes["transpose_a"]}>')
+    elif word == 'batch_norm_inference':
+        text = attributes['epsilon']
+        number = float(text)
+        try:
+            epsilon = mlir_literal(number, 'f32', f'epsilon {text}')
+        except ValueError as error:
+            # An epsilon its f32 cannot hold
+            raise ValueError(f'{instruction}: {error}') from None
+        given = {'epsilon': repr(f'{epsilon} : f32'), 'feature_index': attributes['feature_index']}
     else:
         # Any other word's attributes have StableHLO's names
         given = attributes
@@ -186,11 +204,6 @@ class OracleVisitor(IDLV2Visitor):
 
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
-
-        if op_name not in TYPES:
-            raise NotImplementedError(
-                f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
-            )
 
         operand_names = []
         if op_name == 'constant':
@@ -255,7 +268,7 @@ class OracleVisitor(IDLV2Visitor):
             dialect = 'chlo' if op_name in CHLO else 'stablehlo'
             mapping['op'] = f"'{dialect}.{op_name}'"
             mapping['operands'] = repr(operand_names)
-            mapping['attributes'] = generic_attributes(op_name, attributes)
+            mapping['attributes'] = generic_attributes(op_name, attributes, self.instruction)
 
         elif template_name == 'BROADCAST':
             mapping['A'] = f"'{operand_names[0]}'"
