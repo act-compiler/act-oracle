@@ -173,6 +173,37 @@ ENTRY {
 }
 """)
 
+# Two byte inputs xored as preds
+instr = ops.add_instruction('pred_xor', [], ['addr_a', 'addr_b', 'addr_out'])
+instr.set_inputs([['d0', ['@a.addr_a'], ['4']], ['d0', ['@a.addr_b'], ['4']]])
+instr.set_outputs([['d0', ['@a.addr_out'], ['4']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %In1 = u8[4] parameter(1);
+    %a = pred[4] bitcast_convert(%In0);
+    %b = pred[4] bitcast_convert(%In1);
+    %c = pred[4] xor(%a, %b);
+    ROOT %Out0 = u8[4] bitcast_convert(%c);
+}
+""")
+
+# A pred to and from a wider type
+instr = ops.add_instruction('pred_wide', [], ['addr_in', 'addr_out'])
+instr.set_inputs([['d0', ['@a.addr_in'], ['4']]])
+instr.set_outputs([['d0', ['@a.addr_out'], ['4']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u16[2] bitcast_convert(%a);
+    %c = pred[2,2] bitcast_convert(%b);
+    %d = u16[2] bitcast_convert(%c);
+    %e = u8[2,2] bitcast_convert(%d);
+    ROOT %Out0 = u8[4] reshape(%e);
+}
+""")
+
 generate_oracle(ops)
 decorator, api = import_oracle(os.path.join(ops.base_dir, 'targets', 'OPS'), 'oracle_OPS')
 
@@ -261,6 +292,23 @@ def test_broadcast_dimensions(name):
 def test_rank0_result():
     x = jnp.asarray([3.25], dtype=jnp.float32)
     np.testing.assert_array_equal(run('rank0', [x], (1,), jnp.float32), [3.25])
+
+
+def test_pred_to_and_from_bytes():
+    a, b = (jnp.asarray(rng.integers(0, 2, 4), dtype=jnp.uint8) for _ in range(2))
+    out = run('pred_xor', [a, b], (4,), jnp.uint8)
+    np.testing.assert_array_equal(out, np.asarray(a) ^ np.asarray(b))
+
+
+def test_pred_to_and_from_a_wider_type():
+    x = jnp.asarray([1, 0, 0, 1], dtype=jnp.uint8)
+    np.testing.assert_array_equal(run('pred_wide', [x], (4,), jnp.uint8), np.asarray(x))
+
+
+def test_bool_kernel_input_and_output():
+    a, b = (jnp.asarray(rng.integers(0, 2, 4), dtype=jnp.bool_) for _ in range(2))
+    out = run('pred_xor', [a, b], (4,), jnp.bool_)
+    np.testing.assert_array_equal(out, np.asarray(a) ^ np.asarray(b))
 
 
 def test_attribute_named_by_the_start_of_another():
