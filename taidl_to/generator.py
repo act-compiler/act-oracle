@@ -13,6 +13,7 @@ from pathlib import Path
 from taidl import Accelerator
 
 from .api_generator import generate_api_file
+from .generic.utils import MLIR_ELEM_TYPE
 
 
 def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
@@ -25,6 +26,13 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
     """
     if base_dir is None:
         base_dir = accelerator.base_dir
+
+    # Refuse a type the oracle does not lower, writing nothing
+    for model in accelerator.data_model:
+        if model.var_type not in MLIR_ELEM_TYPE:
+            raise NotImplementedError(
+                f"{model.var_name}: type '{model.var_type}' is not supported by the oracle"
+            )
 
     # Setup directories
     top_gen_directory = os.path.join(base_dir, 'targets', accelerator.name)

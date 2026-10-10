@@ -32,7 +32,7 @@ ENTRY {
 }
 """)
 
-# A row sum per type the grammar lexes
+# A row sum per type: four integer types, three floats
 TYPES = {
     's8': jnp.int8,
     's32': jnp.int32,
