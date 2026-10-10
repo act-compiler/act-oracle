@@ -65,15 +65,15 @@ class OracleVisitor(IDLV2Visitor):
         if op_name not in self.op_to_template:
             raise NotImplementedError(f"{self.entry_name}: operation '{op_name}' is not supported by the oracle")
         template_name = self.op_to_template[op_name]
-        self._generate_from_template(template_name, lhs_name, lhs_type, lhs_shape,
-                                     operand_names, attributes)
+        self.generate_from_template(template_name, lhs_name, lhs_type, lhs_shape,
+                                    operand_names, attributes)
 
         self.instruction_lines.append(f"lvars['{lhs_name}'] = lhs_loc")
 
         return (lhs_name, lhs_type, lhs_shape)
 
-    def _generate_from_template(self, template_name, lhs_name, lhs_type, lhs_shape,
-                                operand_names, attributes):
+    def generate_from_template(self, template_name, lhs_name, lhs_type, lhs_shape,
+                               operand_names, attributes):
         mapping = {
             "lhs": f'"{lhs_name}"',
             "type": f'"{lhs_type}"',
