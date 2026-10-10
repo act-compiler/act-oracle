@@ -6,6 +6,31 @@ from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE
 from .template import generate_code, templates
 
+# Element types as a semantics spells them
+FLOATS = ('f64', 'f32', 'f16', 'bf16')
+INTEGERS = ('u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64')
+EVERY = (*FLOATS, *INTEGERS, 'pred')
+
+# Each word's element types, at its result
+TYPES = {
+    'reshape': EVERY,
+    'convert': EVERY,
+    'copy': EVERY,
+    'bitcast_convert': EVERY,
+    'exponential': FLOATS,
+    'transpose': EVERY,
+    'add': EVERY,
+    'subtract': FLOATS + INTEGERS,
+    'multiply': EVERY,
+    'divide': FLOATS + INTEGERS,
+    'broadcast': EVERY,
+    'maximum': EVERY,
+    'minimum': EVERY,
+    'xor': (*INTEGERS, 'pred'),
+    'dot': EVERY,
+    'reduce_add': EVERY,
+}
+
 
 class OracleVisitor(IDLV2Visitor):
     def __init__(self, instruction, expressions) -> None:
@@ -44,9 +69,14 @@ class OracleVisitor(IDLV2Visitor):
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
 
-        if op_name not in self.op_to_template:
+        if op_name not in TYPES:
             raise NotImplementedError(
                 f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
+            )
+        if lhs_type not in TYPES[op_name]:
+            raise NotImplementedError(
+                f"{self.instruction}: operation '{op_name}' at type '{lhs_type}' "
+                'is not supported by the oracle'
             )
 
         operand_names = []

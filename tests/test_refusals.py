@@ -8,21 +8,20 @@ import tempfile
 
 import pytest
 import taidl.antlr4
-from conftest import import_oracle
+from conftest import EVERY, LOWERED, each_type, import_oracle
 from taidl import Accelerator
 from taidl.operations import BOOL, INT, INTS, LITERAL, NUMBER, ONE_INT, OPERATIONS, RANGES
 
 from taidl_to import generate_oracle
-from taidl_to.oracle_visitor import OracleVisitor
 
 
 def unmapped():
-    """The words the grammar lexes that no template lowers."""
+    """The words the grammar lexes that the table of lowered words leaves out."""
     with open(os.path.join(os.path.dirname(taidl.antlr4.__file__), 'IDLV2.g4')) as file:
         grammar = re.sub(r'//.*', '', file.read())
     rule = re.search(r'^OPERATION\s*:(.*?);', grammar, re.MULTILINE | re.DOTALL).group(1)
     # parameter declares an input, with no template of its own
-    lowered = {'parameter', *OracleVisitor('t', {}).op_to_template}
+    lowered = {'parameter', *LOWERED}
     return [word for word in re.findall(r"'([^']+)'", rule) if word not in lowered]
 
 
@@ -60,6 +59,29 @@ ENTRY {{
 """)
     with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
         generate_oracle(acc)
+
+
+@pytest.mark.parametrize('word', [word for word, types in LOWERED.items() if types != EVERY])
+def test_operation_at_a_type_it_does_not_take_refused(word):
+    operands = ', '.join(['%a'] * OPERATIONS[word][0])
+
+    def check(t):
+        acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+        instr = acc.add_instruction('refused', [], ['addr'])
+        instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+        instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+        instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[2] parameter(0);
+    %a = {t}[2] convert(%In0);
+    %b = {t}[2] {word}({operands});
+    ROOT %Out0 = u8[2] convert(%b);
+}}
+""")
+        with pytest.raises(NotImplementedError, match=f"refused: operation '{word}' at type '{t}'"):
+            generate_oracle(acc)
+
+    each_type([t for t in EVERY if t not in LOWERED[word]], check)
 
 
 # Types the grammar lexes that the oracle does not lower
