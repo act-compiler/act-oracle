@@ -168,19 +168,10 @@ def end_loop():
 			cur_ind += 1
 
 def debug(prefix: str, data: str) -> None:
-	global instruction_scopes, cur_scope, comp_attrs, state, global_counters
-	attrs = {}
+	global instruction_scopes, cur_scope, state, global_counters
 	
 	if mode == 'fsim-compile':
-		lvars = {}
 		output = []
-		for name, arg in attrs.items():
-			if(isinstance(arg, str)):
-				hlo_lines, new_name = generate_loop_eq_vars(arg, global_counters)
-				output.append(hlo_lines)
-				attrs[name] = new_name
-				global_counters['loop_var'] += 1
-		
 
 		# The handler prints the prefix up to a nul
 		prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
@@ -194,7 +185,7 @@ def debug(prefix: str, data: str) -> None:
 
 		data_name = data.split("[")[0]
 
-		rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, data_name)
+		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, data_name)
 		data_dims = ast.literal_eval('[' + global_counters[data_name]["type"].split("[")[1].split("]")[0] + ']')
 		debug_dims = ast.literal_eval('[' + data.split("[")[1].split("]")[0] + ']')
 		slice_configs = []
@@ -208,16 +199,16 @@ def debug(prefix: str, data: str) -> None:
 				slice_configs.append('0')
 		
 		data_type = global_counters[data_name]["type"].split("[")[0]
-		lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, 'debug_slice', data_type, data_dims)
-		line = slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, comp_attrs)
+		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice', data_type, data_dims)
+		line = slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {})
 		output.append(line)
 
-		rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, 'debug_slice')
-		lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, 'debug_slice_f64', 'f64', data_dims)
+		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice')
+		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
 		line = f'{lhs_loc} = {lhs_type} convert({rhs_loc})'
 		output.append(line)
 
-		rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, 'debug_slice_f64')
+		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice_f64')
 		debug_prefix_loc = f'debug_prefix.{global_counters["instruction_counter"]}'
 		output.append(f'{debug_prefix_loc} = u8[{prefix_len}] constant({prefix_string})')
 		output.append(f'call.{global_counters["instruction_counter"]} = s32[] custom-call({debug_prefix_loc}, {rhs_loc}), custom_call_target="print_handler", custom_call_has_side_effect=true, api_version=API_VERSION_TYPED_FFI')
