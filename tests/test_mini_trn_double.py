@@ -1,4 +1,4 @@
-"""Test QKV_new oracle with all 4 attention kernel variants"""
+"""Test the mini_trn_double oracle with all 4 attention kernel variants"""
 
 import os
 
@@ -14,8 +14,8 @@ from conftest import (
     run_kernel,
 )
 
-QKV_DIR = os.path.join(EXAMPLES_DIR, 'QKV_new')
-kernel, api = generate_and_import_oracle(QKV_DIR)
+MINI_TRN_DOUBLE_DIR = os.path.join(EXAMPLES_DIR, 'mini_trn_double')
+kernel, api = generate_and_import_oracle(MINI_TRN_DOUBLE_DIR)
 
 
 @pytest.mark.skipif(PLATFORM == 'GPU', reason='the goldens are exact on the CPU alone')
@@ -24,9 +24,13 @@ kernel, api = generate_and_import_oracle(QKV_DIR)
 )
 def test_attention(kernel_name):
     output = run_kernel(
-        kernel, api, kernel_name, os.path.join(QKV_DIR, 'assembly'), os.path.join(QKV_DIR, 'data')
+        kernel,
+        api,
+        kernel_name,
+        os.path.join(MINI_TRN_DOUBLE_DIR, 'assembly'),
+        os.path.join(MINI_TRN_DOUBLE_DIR, 'data'),
     )
-    golden, record = load_golden(os.path.join(QKV_DIR, 'data'), kernel_name)
+    golden, record = load_golden(os.path.join(MINI_TRN_DOUBLE_DIR, 'data'), kernel_name)
     max_diff = float(jnp.max(jnp.abs(output - golden)))
     assert max_diff == 0, (
         f'{kernel_name}: Max diff: {max_diff} (golden from jax {record["jax"]} on {record["platform"]} {record["machine"]})'
@@ -38,8 +42,12 @@ def test_attention(kernel_name):
 )
 def test_attention_reference(kernel_name):
     output = run_kernel(
-        kernel, api, kernel_name, os.path.join(QKV_DIR, 'assembly'), os.path.join(QKV_DIR, 'data')
+        kernel,
+        api,
+        kernel_name,
+        os.path.join(MINI_TRN_DOUBLE_DIR, 'assembly'),
+        os.path.join(MINI_TRN_DOUBLE_DIR, 'data'),
     )
-    reference, tol = attention_reference(os.path.join(QKV_DIR, 'data'))
+    reference, tol = attention_reference(os.path.join(MINI_TRN_DOUBLE_DIR, 'data'))
     max_diff = float(np.max(np.abs(np.asarray(output, np.float64) - reference)))
     assert max_diff <= tol, f'{kernel_name}: Max diff from reference: {max_diff} > {tol}'

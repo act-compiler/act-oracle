@@ -1,25 +1,25 @@
-"""QKV Accelerator ISA Definition"""
+"""mini_trn Accelerator ISA Definition"""
 
 from taidl import Accelerator
 
 from taidl_to import generate_oracle
 
-qkv = Accelerator('QKV')
+mini_trn = Accelerator('mini_trn')
 
 
 # Define Data Models
 
 # d1: 128 rows x 64 columns of bf16
-qkv.add_data_model('d1', [128], [64], 'bf16')
+mini_trn.add_data_model('d1', [128], [64], 'bf16')
 
 # d2: 64 rows x 64 columns of bf16
-qkv.add_data_model('d2', [64], [64], 'bf16')
+mini_trn.add_data_model('d2', [64], [64], 'bf16')
 
 
 # Define Instruction semantics
 
 # load_rm: load d1 from HBM (d0), row-major
-instr = qkv.add_instruction('load_rm', ['n'], ['addr_in', 'addr_out'])
+instr = mini_trn.add_instruction('load_rm', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_in'], ['@c.n * 128']]])  # u8[@c.n * 128]
 instr.set_outputs([['d1', ['@a.addr_out'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.add_semantics("""
@@ -31,7 +31,7 @@ ENTRY {
 """)
 
 # load_cm: load d1 from HBM (d0), column-major
-instr = qkv.add_instruction('load_cm', ['n'], ['addr_in', 'addr_out'])
+instr = mini_trn.add_instruction('load_cm', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_in'], ['@c.n * 128']]])  # u8[@c.n * 128]
 instr.set_outputs([['d1', ['@a.addr_out'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.add_semantics("""
@@ -44,7 +44,7 @@ ENTRY {
 """)
 
 # store_rm: store d1 to HBM (d0), row-major
-instr = qkv.add_instruction('store_rm', ['n'], ['addr_in', 'addr_out'])
+instr = mini_trn.add_instruction('store_rm', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d1', ['@a.addr_in'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.set_outputs([['d0', ['@a.addr_out'], ['@c.n * 128']]])  # u8[@c.n * 128]
 instr.add_semantics("""
@@ -56,7 +56,7 @@ ENTRY {
 """)
 
 # store_cm: store d1 to HBM (d0), column-major
-instr = qkv.add_instruction('store_cm', ['n'], ['addr_in', 'addr_out'])
+instr = mini_trn.add_instruction('store_cm', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d1', ['@a.addr_in'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.set_outputs([['d0', ['@a.addr_out'], ['@c.n * 128']]])  # u8[@c.n * 128]
 instr.add_semantics("""
@@ -69,7 +69,7 @@ ENTRY {
 """)
 
 # (5) mov: Copies data from d2 to d1
-instr = qkv.add_instruction('mov', ['n'], ['addr_in', 'addr_out'])
+instr = mini_trn.add_instruction('mov', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d2', ['@a.addr_in'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.set_outputs([['d1', ['@a.addr_out'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.add_semantics("""
@@ -80,7 +80,7 @@ ENTRY {
 """)
 
 # gemm: multiply two d1 tiles into d2
-instr = qkv.add_instruction('gemm', [], ['addr_1', 'addr_2', 'addr_out'])
+instr = mini_trn.add_instruction('gemm', [], ['addr_1', 'addr_2', 'addr_out'])
 instr.set_inputs([['d1', ['@a.addr_1'], ['64']], ['d1', ['@a.addr_2'], ['64']]])
 instr.set_outputs([['d2', ['@a.addr_out'], ['64']]])  # bf16[64, 64]
 instr.add_semantics("""
@@ -92,7 +92,7 @@ ENTRY {
 """)
 
 # (7) softmax: Applies softmax along dimension 1 (rows) on d2
-instr = qkv.add_instruction('softmax', ['n'], ['addr'])
+instr = mini_trn.add_instruction('softmax', ['n'], ['addr'])
 instr.set_inputs([['d2', ['@a.addr'], ['@c.n']]])
 instr.set_outputs([['d2', ['@a.addr'], ['@c.n']]])  # In-place operation
 instr.add_semantics("""
@@ -107,4 +107,4 @@ ENTRY {
 
 
 # Generate programming APIs and test oracle (functional simulator)
-generate_oracle(qkv)
+generate_oracle(mini_trn)

@@ -19,8 +19,8 @@ from conftest import (
     run_kernel,
 )
 
-QKV_DIR = os.path.join(EXAMPLES_DIR, 'QKV')
-kernel, api = generate_and_import_oracle(QKV_DIR)
+MINI_TRN_DIR = os.path.join(EXAMPLES_DIR, 'mini_trn')
+kernel, api = generate_and_import_oracle(MINI_TRN_DIR)
 
 # Q, K and V in, one output after them
 INPUT = [{'addr': a, 'shape': (64, 64), 'dtype': jnp.bfloat16} for a in (0, 8192, 16384)]
@@ -28,7 +28,9 @@ OUTPUT = [{'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16}]
 
 
 def load_qkv():
-    return [load_bf16_matrix(os.path.join(QKV_DIR, 'data', f'{n}.dat'), (64, 64)) for n in 'QKV']
+    return [
+        load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', f'{n}.dat'), (64, 64)) for n in 'QKV'
+    ]
 
 
 @pytest.mark.parametrize('mode', ['simulate', 'FSIM'])
@@ -71,7 +73,7 @@ def test_debug_prints_values(capfd):
 
 def test_generation_rebuilds_the_debug_handler():
     start = time.time()
-    build_dir = os.path.join(generate_example(QKV_DIR), 'oracle', 'build')
+    build_dir = os.path.join(generate_example(MINI_TRN_DIR), 'oracle', 'build')
     handler = glob.glob(os.path.join(build_dir, 'print_handler_ext*.so'))
     # Built by this generation, not one before it
     assert handler and os.path.getmtime(handler[0]) >= start
@@ -140,7 +142,7 @@ def run_printing(kern, a, prefix, inputs):
 
 
 def test_two_oracles_print(capfd):
-    other_decorator, other_api = import_oracle(generate_example(QKV_DIR), 'oracle_other')
+    other_decorator, other_api = import_oracle(generate_example(MINI_TRN_DIR), 'oracle_other')
     # Each oracle registers its own debug handler
     inputs = load_qkv()
     for kern, a, prefix in ((kernel, api, 'first'), (other_decorator.kernel, other_api, 'second')):
@@ -214,11 +216,15 @@ def test_loop_matches_unrolled(twin):
     outputs, _ = k('fsim')(*load_qkv())
     if PLATFORM == 'GPU':
         # No bit equality on the GPU: the twin is held to the reference
-        reference, tol = attention_reference(os.path.join(QKV_DIR, 'data'))
+        reference, tol = attention_reference(os.path.join(MINI_TRN_DIR, 'data'))
         assert np.max(np.abs(np.asarray(outputs[0], np.float64) - reference)) <= tol
         return
     unrolled = run_kernel(
-        kernel, api, 'attention', os.path.join(QKV_DIR, 'assembly'), os.path.join(QKV_DIR, 'data')
+        kernel,
+        api,
+        'attention',
+        os.path.join(MINI_TRN_DIR, 'assembly'),
+        os.path.join(MINI_TRN_DIR, 'data'),
     )
     assert np.asarray(outputs[0]).tobytes() == np.asarray(unrolled).tobytes()
 
