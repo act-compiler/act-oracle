@@ -20,7 +20,7 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.6
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.7
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
@@ -48,6 +48,24 @@ Running a spec, such as `python examples/mini_trn/mini_trn.py`, generates its or
 Each kernel file defines a function that takes the oracle's `kernel` and `api` and returns the decorated kernel; in the five attention kernels it is called `attention`.
 `tests/conftest.py` generates each oracle in a temporary directory and runs its kernels on the matrices under `data/`.
 The tests hold each attention kernel to its golden there and to a NumPy reference, and `identity`, `matmul` and `softmax` to the input, the product and the softmax NumPy computes.
+
+## What an oracle refuses
+
+TAIDL v2.13 refuses with a `SyntaxError`, as the spec loads, a semantics whose form the language does not accept, and leaves whether its shapes and types agree and whether an operation is supported to each generator.
+`generate_oracle` then refuses, before it writes anything, a spec it cannot turn into an oracle, with an error that names the instruction or data model.
+It raises `NotImplementedError` for what the oracle does not support:
+
+- an operation word the oracle does not lower, at all or at its element type
+- a data model or value of `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` or `f8e5m2`, the element types the oracle does not lower
+- an expression in backticks in an attribute the oracle lowers from a literal alone
+- an instruction that updates the machine state
+- a name the generated oracle keeps for itself, as an instruction, attribute, data model or value
+
+It raises `ValueError` for a spec that contradicts itself:
+
+- an instruction with output regions and no semantics, or a `%In<k>` or `%Out<k>` in one with no region of its kind
+- a tile typed unlike its data model, or holding more elements than its region
+- a line whose shapes, element types or attributes disagree, where the spec writes them as integers
 
 ## Platforms
 
