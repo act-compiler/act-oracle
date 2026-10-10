@@ -2,15 +2,18 @@
 
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
+from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE
 from .template import generate_code, init_templates, templates
 
 
 class OracleVisitor(IDLV2Visitor):
-    def __init__(self, instruction) -> None:
+    def __init__(self, instruction, expressions) -> None:
         super().__init__()
         # The instruction whose semantics this visits, for a refusal
         self.instruction = instruction
+        # Each backtick expression's tree, by its node
+        self.expressions = expressions
         self.instruction_lines = []
         init_templates()
 
@@ -42,46 +45,34 @@ class OracleVisitor(IDLV2Visitor):
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
 
-        operand_names = []
-        if ctx.operands():
-            operand_info = self.visit(ctx.operands())
-            for operand_value, operand_type in operand_info:
-                if operand_type == 'IDENTIFIER':
-                    operand_names.append(operand_value.lstrip('%'))
-                else:
-                    operand_names.append(operand_value)
-
-        attributes = {}
-        if ctx.attributes():
-            attribute_info = self.visit(ctx.attributes())
-            for attr_name, attr_value, attr_type in attribute_info:
-                if attr_type == 'BRACELIST':
-                    values = [v['value'] for v in attr_value]
-                    attributes[attr_name] = values
-                else:
-                    attributes[attr_name] = attr_value
-
         if op_name not in self.op_to_template:
             raise NotImplementedError(
                 f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
             )
+
+        operand_names = []
+        if ctx.operands():
+            operand_info = self.visit(ctx.operands())
+            for operand_value in operand_info:
+                operand_names.append(operand_value.lstrip('%'))
+
+        attributes = {}
+        if ctx.attributes():
+            attribute_info = self.visit(ctx.attributes())
+            for attr_name, attr_value in attribute_info:
+                attributes[attr_name] = attr_value
+
         template_name = self.op_to_template[op_name]
         self.generate_from_template(
             template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
         )
-
-        self.instruction_lines.append(f"lvars['{lhs_name}'] = lhs_loc")
 
         return (lhs_name, lhs_type, lhs_shape)
 
     def generate_from_template(
         self, template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
     ):
-        mapping = {
-            'lhs': f"'{lhs_name}'",
-            'type': f"'{lhs_type}'",
-            'size': '[' + ', '.join(lhs_shape.split(',')) + ']',
-        }
+        mapping = {'lhs': f"'{lhs_name}'", 'type': f"'{lhs_type}'", 'size': f'[{lhs_shape}]'}
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
             mapping['in'] = f"'{operand_names[0]}'"
@@ -132,9 +123,8 @@ class OracleVisitor(IDLV2Visitor):
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.name().getText()
-        attr_value_info = self.visit(ctx.attribute_value())
-        attr_value, attr_type = attr_value_info
-        return (attr_name, attr_value, attr_type)
+        attr_value = self.visit(ctx.attribute_value())
+        return (attr_name, attr_value)
 
     def visitAttributes(self, ctx: IDLV2Parser.AttributesContext):
         attributes_list = []
@@ -144,41 +134,20 @@ class OracleVisitor(IDLV2Visitor):
         return attributes_list
 
     def visitAttribute_value(self, ctx: IDLV2Parser.Attribute_valueContext):
-        if ctx.brace_list():
-            brace_info = self.visit(ctx.brace_list())
-            return (brace_info, 'BRACELIST')
-        elif ctx.value():
-            value_ctx = ctx.value()
-            value_text = value_ctx.getText()
-
-            if value_ctx.INT():
-                value_type = 'INT'
-            elif value_ctx.IDENTIFIER():
-                value_type = 'IDENTIFIER'
-            elif value_ctx.EXPRESSION():
-                value_type = 'EXPRESSION'
-
-            return (value_text, value_type)
-        else:
-            return ('', 'UNKNOWN')
+        # A lowered word's every attribute is a list of integers
+        return self.visit(ctx.brace_list())
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
-        if ctx.value():
-            values = []
-            for value_ctx in ctx.value():
-                value_text = value_ctx.getText()
-
-                if value_ctx.INT():
-                    value_type = 'INT'
-                elif value_ctx.IDENTIFIER():
-                    value_type = 'IDENTIFIER'
-                elif value_ctx.EXPRESSION():
-                    value_type = 'EXPRESSION'
-
-                values.append({'value': value_text, 'type': value_type})
-            return values
-        else:
-            return []
+        values = []
+        for value_ctx in ctx.value():
+            if value_ctx.EXPRESSION():
+                # The oracle lowers a list of integers alone
+                name = ctx.parentCtx.parentCtx.name().getText()
+                raise NotImplementedError(
+                    f"{self.instruction}: an expression in '{name}' is not supported by the oracle"
+                )
+            values.append(value_ctx.getText())
+        return values
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
         # Refuse by name a type the oracle does not lower
@@ -195,10 +164,13 @@ class OracleVisitor(IDLV2Visitor):
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
-        dims = ctx.getText()
-        dims = dims.replace('`', "'")
+        # An expression as Python evaluated at each call
+        dims = [
+            python(self.expressions[dim.EXPRESSION()]) if dim.EXPRESSION() else dim.INT().getText()
+            for dim in ctx.dim()
+        ]
         typ = ctx.parentCtx.TYPE().getText()
-        return (dims, typ)
+        return (', '.join(dims), typ)
 
     def visitOperands(self, ctx: IDLV2Parser.OperandsContext):
         operand_list = []
@@ -208,14 +180,5 @@ class OracleVisitor(IDLV2Visitor):
         return operand_list
 
     def visitOperand(self, ctx: IDLV2Parser.OperandContext):
-        value_ctx = ctx.value()
-        value_text = value_ctx.getText()
-
-        if value_ctx.INT():
-            operand_type = 'INT'
-        elif value_ctx.IDENTIFIER():
-            operand_type = 'IDENTIFIER'
-        elif value_ctx.EXPRESSION():
-            operand_type = 'EXPRESSION'
-
-        return (value_text, operand_type)
+        # A lowered word's every operand is a value's name
+        return ctx.value().getText()

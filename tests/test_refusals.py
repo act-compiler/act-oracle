@@ -19,7 +19,7 @@ def unmapped():
         grammar = re.sub(r'//.*', '', file.read())
     rule = re.search(r'^OPERATION\s*:(.*?);', grammar, re.MULTILINE | re.DOTALL).group(1)
     # parameter declares an input, with no template of its own
-    lowered = {'parameter', *OracleVisitor('t').op_to_template}
+    lowered = {'parameter', *OracleVisitor('t', {}).op_to_template}
     return [word for word in re.findall(r"'([^']+)'", rule) if word not in lowered]
 
 
@@ -85,6 +85,24 @@ def test_unlowered_type_in_data_model_refused(t):
     acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
     acc.add_data_model('d1', [4], [4], t)
     with pytest.raises(NotImplementedError, match=f"d1: type '{t}' is not supported"):
+        generate_oracle(acc)
+
+
+def test_expression_in_a_list_attribute_refused():
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', ['k'], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['4']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %a = u8[2,2] reshape(%In0);
+    %b = u8[2,2] transpose(%a), dimensions={`@c.k`, 0};
+    ROOT %Out0 = u8[4] reshape(%b);
+}
+""")
+    message = "refused: an expression in 'dimensions' is not supported by the oracle"
+    with pytest.raises(NotImplementedError, match=message):
         generate_oracle(acc)
 
 

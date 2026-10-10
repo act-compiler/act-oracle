@@ -93,65 +93,24 @@ def generate_loop_eq_vars(expression, global_counters):
     return '\n'.join(lines) + '\n', final_name
 
 
-def substitute(template, attrs, state, lvars, consts):
-    if type(template) == int:
-        return str(template)
-    for key, value in attrs.items():
-        template = template.replace('@a.' + key, str(value))
-    for key, value in state.items():
-        template = template.replace('@s.' + key, str(value))
-    for key, value in lvars.items():
-        template = template.replace('@l.' + key, str(value))
-    for key, value in consts.items():
-        template = template.replace('@c.' + key, str(value))
-    return template
-
-
-def compute(exp_: str) -> int | float:
-    """
-    Compute the value of an expression
-    """
-    import ast
-
-    try:
-        if '%loop_final' in exp_:
-            return exp_
-        output = eval(compile(ast.parse(exp_, mode='eval'), '', 'eval'))
-        if type(output) is float:
-            output = int(output)
-    except Exception as error:
-        print('Expression: ')
-        print(exp_)
-        raise AssertionError from error
-    return output
-
-
-def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype='', lhs_dim=()):
+def lhs_util(global_counters, lhs_name, lhs_vartype='', lhs_dim=()):
     if lhs_name in global_counters:
         global_counters[lhs_name]['counter'] += 1
         lhs_type = global_counters[lhs_name]['type']
     else:
-        dim_sizes = simplify_vals(lhs_dim, attrs, state, lvars, consts)
-        dim_sizes = ','.join(dim_sizes)
+        dim_sizes = ','.join(str(dim) for dim in lhs_dim)
         lhs_type = f'{lhs_vartype}[{dim_sizes}]'
-    lhs_name = parameter_util(global_counters, attrs, state, lvars, consts, lhs_name)
+    lhs_name = parameter_util(global_counters, lhs_name)
     return lhs_name, lhs_type
 
 
-def parameter_util(global_counters, attrs, state, lvars, consts, lhs_name):
-    lhs_name = substitute(lhs_name, attrs, state, lvars, consts)
+def parameter_util(global_counters, lhs_name):
     if lhs_name in global_counters:
         lhs_name += f'.{global_counters[lhs_name]["counter"]}'
     else:
         lhs_name += f'.{global_counters["instruction_counter"]}'
     lhs_name = '%' + lhs_name
     return lhs_name
-
-
-def simplify_vals(vals, attrs, state, lvars, consts):
-    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
-    vals = list(map(simplify, vals))
-    return vals
 
 
 # Each sh_* helper records its result's MLIR type in ssa_types
@@ -286,9 +245,8 @@ def index_constants(lhs, starts):
     return lines, locs
 
 
-def sh_slice_load(lhs, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, consts, ssa_types):
-    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
-    lines, locs = index_constants(lhs, [simplify(sc) for sc in slice_configs])
+def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
+    lines, locs = index_constants(lhs, [str(start) for start in starts])
     t = mlir_type(lhs_type)
     sizes = lhs_type.split('[', 1)[1].split(']')[0]
     lines.append(
@@ -299,11 +257,8 @@ def sh_slice_load(lhs, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, co
     return '\n\t'.join(lines)
 
 
-def sh_slice_store(
-    lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices, attrs, state, lvars, consts, ssa_types
-):
-    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
-    lines, locs = index_constants(lhs_loc, list(map(simplify, start_indices)))
+def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types):
+    lines, locs = index_constants(lhs_loc, [str(start) for start in starts])
     t = mlir_type(lhs_type)
     lines.append(
         f'{lhs_loc} = stablehlo.dynamic_update_slice {", ".join([rhs_loc, rhs_update] + locs)} : '
