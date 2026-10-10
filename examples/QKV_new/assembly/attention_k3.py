@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 
-def qkv(kernel, api):
+def attention(kernel, api):
     @kernel(
         hbm=32768,
         input=[
@@ -12,7 +12,7 @@ def qkv(kernel, api):
         constant=[],
         output=[{'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16}],
     )
-    def qkv_():
+    def attention_():
         # S = Q @ K^T, by gemm_33
         api.load_01(n=64, addr_in=8192, addr_out=0)  # K
         api.transpose_13(addr_in=0, addr_out=64)  # K^T
@@ -30,4 +30,4 @@ def qkv(kernel, api):
         # ===== STAGE 5: Store Result =====
         api.store_10(n=64, addr_in=0, addr_out=24576)
 
-    return qkv_
+    return attention_

@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 
-def qkv(kernel, api):
+def attention(kernel, api):
     @kernel(
         hbm=32768,  # 32 KB: enough for 3 inputs + 1 output
         input=[
@@ -15,7 +15,7 @@ def qkv(kernel, api):
             {'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16},
         ],
     )
-    def qkv_():
+    def attention_():
         # Load Q in row-major
         api.load_rm(n=64, addr_in=0, addr_out=0)
 
@@ -46,4 +46,4 @@ def qkv(kernel, api):
         # Store O to HBM at address 24576
         api.store_rm(n=64, addr_in=0, addr_out=24576)
 
-    return qkv_
+    return attention_
