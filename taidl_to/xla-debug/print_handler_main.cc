@@ -74,11 +74,13 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Arg<ffi::Buffer<ffi::DataType::F64>>()
         .Ret<ffi::Buffer<ffi::DataType::S32>>());
 
-// Nanobind module definition
+// Nanobind module definition: targets by platform, then by name
 NB_MODULE(print_handler_ext, m) {
     m.def("registrations", []() {
         nb::dict registrations;
-        registrations["print_handler"] = nb::capsule(reinterpret_cast<void*>(PrintHandler));
+        nb::dict cpu;
+        cpu["print_handler"] = nb::capsule(reinterpret_cast<void*>(PrintHandler));
+        registrations["cpu"] = cpu;
         return registrations;
     });
 }
