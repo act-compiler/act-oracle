@@ -27,7 +27,7 @@ def softmax(kernel, api):
         # Load identity matrix I (constant)
         api.load_cm(n=64, addr_in=8192, addr_out=64)
 
-        # Compute A × I = A
+        # Compute A @ I = A
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
         # Apply softmax to A (in-place in d2)

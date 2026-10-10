@@ -13,8 +13,7 @@ def qkv(kernel, api):
         output=[{'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16}],
     )
     def qkv_():
-        # Kernel 3: gemm_33, gemm_13
-        # ===== STAGE 1: Compute Attention Scores (Q × K^T) =====
+        # S = Q @ K^T, by gemm_33
         api.load_01(n=64, addr_in=8192, addr_out=0)  # K
         api.transpose_13(addr_in=0, addr_out=64)  # K^T
         api.load_03(n=64, addr_in=0, addr_out=0)
@@ -25,7 +24,7 @@ def qkv(kernel, api):
         # ===== STAGE 3: Prepare for Second MatMul =====
         api.mov_21(n=64, addr_in=0, addr_out=0)
         api.load_03(n=64, addr_in=16384, addr_out=0)
-        # ===== STAGE 4: Compute Final Output (P × V) =====
+        # O = P @ V, by gemm_13
         api.gemm_13(addr_1=0, addr_2=0, addr_out=0)
         api.mov_21(n=64, addr_in=0, addr_out=0)
         # ===== STAGE 5: Store Result =====

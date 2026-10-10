@@ -9,39 +9,34 @@ def qkv(kernel, api):
             {'addr': 8192, 'shape': (64, 64), 'dtype': jnp.bfloat16},  # K
             {'addr': 16384, 'shape': (64, 64), 'dtype': jnp.bfloat16},  # V
         ],
-        constant=[],  # No constants needed
+        constant=[],
         output=[
-            # O = softmax(Q × K^T) × V
+            # O = softmax(Q @ K^T) @ V
             {'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16},
         ],
     )
     def qkv_():
-        # Kernel implementation goes here
-
-        # ===== STAGE 1: Compute Attention Scores (Q × K^T) =====
-        # Load Q in row-major (standard)
+        # Load Q in row-major
         api.load_rm(n=64, addr_in=0, addr_out=0)
 
-        # Load K in column-major (gives us K^T automatically!)
+        # Load K in column-major, giving K^T
         api.load_cm(n=64, addr_in=8192, addr_out=64)
 
-        # Compute S = Q × K^T
+        # Compute S = Q @ K^T
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
         # ===== STAGE 2: Normalize Scores (softmax) =====
-        # Apply softmax to S, converting it to P (in-place in d2)
+        # Apply softmax to S, giving P (in-place in d2)
         api.softmax(n=64, addr=0)
 
         # ===== STAGE 3: Prepare for Second MatMul =====
         # Move P from d2[0:63] to d1[0:63]
-        # Recall: mov copies between scratchpads
         api.mov(n=64, addr_in=0, addr_out=0)
 
         # Load V into d1[64:127] (reusing K^T's space)
         api.load_rm(n=64, addr_in=16384, addr_out=64)
 
-        # ===== STAGE 4: Compute Final Output (P × V) =====
-        # Compute O = P × V, result in d2[0:63]
+        # Compute O = P @ V, result in d2[0:63]
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
         # ===== STAGE 5: Store Result =====
