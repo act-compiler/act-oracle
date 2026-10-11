@@ -6,4 +6,5 @@ cd "$(dirname "$0")/.."
 ./docker/exec.sh \
   "pip install -e . -q && \
   pytest tests/test_qkv.py && \
-  pytest tests/test_qkv_new.py"
+  pytest tests/test_qkv_new.py && \
+  pytest tests/test_templates.py"
