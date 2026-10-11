@@ -4,11 +4,11 @@ import os
 
 templates = {}
 
-_TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
 
 def init_templates():
-    filepath = os.path.join(_TEMPLATES_DIR, "templates.txt")
+    filepath = os.path.join(TEMPLATES_DIR, "templates.txt")
     if templates:
         return
     with open(filepath, "r") as file:
