@@ -31,14 +31,10 @@ class OracleVisitor(IDLV2Visitor):
         }
 
     def visitModule(self, ctx: IDLV2Parser.ModuleContext):
-        self.instruction_lines.append("Module:")
         self.entry_name = ctx.IDENTIFIER().getText()
         return self.visitChildren(ctx)
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
-        if ctx.ROOT():
-            pass
-
         lhs_name = ctx.IDENTIFIER().getText().lstrip('%')
         result_type_info = self.visit(ctx.result_type())
         lhs_type, lhs_shape = result_type_info
@@ -69,14 +65,14 @@ class OracleVisitor(IDLV2Visitor):
         if op_name not in self.op_to_template:
             raise NotImplementedError(f"{self.entry_name}: operation '{op_name}' is not supported by the oracle")
         template_name = self.op_to_template[op_name]
-        self._generate_from_template(template_name, op_name, lhs_name, lhs_type, lhs_shape,
+        self._generate_from_template(template_name, lhs_name, lhs_type, lhs_shape,
                                      operand_names, attributes)
 
         self.instruction_lines.append(f"lvars['{lhs_name}'] = lhs_loc")
 
         return (lhs_name, lhs_type, lhs_shape)
 
-    def _generate_from_template(self, template_name, op_name, lhs_name, lhs_type, lhs_shape,
+    def _generate_from_template(self, template_name, lhs_name, lhs_type, lhs_shape,
                                 operand_names, attributes):
         mapping = {
             "lhs": f'"{lhs_name}"',
@@ -178,8 +174,6 @@ class OracleVisitor(IDLV2Visitor):
                 value_type = 'IDENTIFIER'
             elif value_ctx.EXPRESSION():
                 value_type = 'EXPRESSION'
-            else:
-                value_type = 'UNKNOWN'
 
             return (value_text, value_type)
         else:
@@ -197,8 +191,6 @@ class OracleVisitor(IDLV2Visitor):
                     value_type = 'IDENTIFIER'
                 elif value_ctx.EXPRESSION():
                     value_type = 'EXPRESSION'
-                else:
-                    value_type = 'UNKNOWN'
 
                 values.append({'value': value_text, 'type': value_type})
             return values
@@ -233,7 +225,5 @@ class OracleVisitor(IDLV2Visitor):
             operand_type = 'IDENTIFIER'
         elif value_ctx.EXPRESSION():
             operand_type = 'EXPRESSION'
-        else:
-            operand_type = 'UNKNOWN'
 
         return (value_text, operand_type)

@@ -35,7 +35,7 @@ def generate_semantic_init(data_models):
     return output
 
 
-def generate_api_file(oracle_gen_dir: str, accelerator_name: str, instructions,
+def generate_api_file(oracle_gen_dir: str, instructions,
                       constants, state, data_models) -> None:
     """Generate the api.py file for oracle"""
     init_templates()
@@ -53,8 +53,7 @@ def generate_api_file(oracle_gen_dir: str, accelerator_name: str, instructions,
     output = generate_code(templates["API_FILE"], {
         "constants": consts,
         "state": state_str,
-        "semantic_init": semantic_init,
-        "API_NAME": accelerator_name
+        "semantic_init": semantic_init
     })
 
     for instruction in instructions:

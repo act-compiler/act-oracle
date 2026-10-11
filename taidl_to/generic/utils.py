@@ -89,23 +89,6 @@ def generate_loop_eq_vars(expression, global_counters):
     return hlo_line, final_name
 
 
-def replace_values(string, symbol, list):
-    pattern = rf'@{symbol}\.(\w+)'
-    replaced_string = re.sub(pattern, fr'{list}["\1"]', string)
-    return replaced_string
-    
-def replace_values(string, symbol, list):
-    pattern = rf'@{symbol}\.(\w+)'
-    replaced_string = re.sub(pattern, fr'{list}["\1"]', string)
-    return replaced_string
-
-def blind_substitute(template):
-    template = replace_values(template, "a", "attrs")
-    template = replace_values(template, "s", "state")
-    template = replace_values(template, "c", "comp_attrs")
-    template = replace_values(template, "l", "lvars")
-    return template
-
 def substitute(template, attrs, state, lvars, consts):
     if(type(template) == int):
         return str(template)

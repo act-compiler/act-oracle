@@ -7,7 +7,6 @@ It coordinates template-based generation of Python API files for accelerators.
 import os
 from pathlib import Path
 import shutil
-from typing import List
 import subprocess
 
 from taidl import Accelerator
@@ -41,7 +40,7 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
     print(f"Copied generic oracle structure to {oracle_gen_dir}")
 
     # Generate API file
-    generate_api_file(oracle_gen_dir, accelerator.name, accelerator.instructions,
+    generate_api_file(oracle_gen_dir, accelerator.instructions,
                       accelerator.constants, accelerator.state, accelerator.data_model)
 
     print(f"Generated api.py")

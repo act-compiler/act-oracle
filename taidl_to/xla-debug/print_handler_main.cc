@@ -1,7 +1,5 @@
 #include <iostream>
-#include <numeric>
 #include <vector>
-#include <iomanip>
 
 #include "nanobind/nanobind.h"
 #include "xla/ffi/api/ffi.h"

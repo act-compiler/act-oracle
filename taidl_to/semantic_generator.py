@@ -10,9 +10,7 @@ def generate_semantic_code(ast) -> str:
     visitor = OracleVisitor()
     visitor.visit(ast)
 
-    code_lines = [line for line in visitor.instruction_lines if line != "Module:"]
-
-    indented_lines = ["\t" + line for line in code_lines]
+    indented_lines = ["\t" + line for line in visitor.instruction_lines]
 
     code = "\n".join(indented_lines)
 
