@@ -15,3 +15,9 @@ TAIDL not only standardizes the way tensor accelerator ISAs are specified but al
 
 Details on automatically generating fast & scalable test oracles from TAIDL definitions is present in Section 6 of our [MICRO 2025](https://doi.org/10.1145/3725843.3756075) paper.
 For detailed evaluations against existing baselines, refer to our [MICRO 2025 Artifact](https://github.com/act-compiler/taidl-artifact-micro25).
+
+## Installation
+
+```bash
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.3
+```
