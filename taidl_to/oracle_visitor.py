@@ -32,6 +32,7 @@ class OracleVisitor(IDLV2Visitor):
 
     def visitModule(self, ctx: IDLV2Parser.ModuleContext):
         self.instruction_lines.append("Module:")
+        self.entry_name = ctx.IDENTIFIER().getText()
         return self.visitChildren(ctx)
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
@@ -65,6 +66,8 @@ class OracleVisitor(IDLV2Visitor):
                 else:
                     attributes[attr_name] = attr_value
 
+        if op_name not in self.op_to_template:
+            raise NotImplementedError(f"{self.entry_name}: operation '{op_name}' is not supported by the oracle")
         template_name = self.op_to_template[op_name]
         self._generate_from_template(template_name, op_name, lhs_name, lhs_type, lhs_shape,
                                      operand_names, attributes)
