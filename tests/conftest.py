@@ -76,11 +76,15 @@ def load_golden(data_dir, kernel_name):
     return load_bf16_matrix(os.path.join(data_dir, name), (64, 64)), record
 
 
+def bf16(x):
+    """Round float64 values to bf16, kept in float64"""
+    return x.astype(ml_dtypes.bfloat16).astype(np.float64)
+
+
 def attention_reference(data_dir):
     """Return softmax(Q K^T) V in numpy, rounded to bf16 where the spec rounds, and its tolerance"""
     Q, K, V = (np.fromfile(os.path.join(data_dir, f"{n}.dat"), dtype=ml_dtypes.bfloat16)
                .reshape(64, 64).astype(np.float64) for n in "QKV")
-    bf16 = lambda x: x.astype(ml_dtypes.bfloat16).astype(np.float64)
     S = bf16(Q @ K.T)
     E = bf16(np.exp(S))
     P = bf16(E / bf16(E.sum(axis=1, keepdims=True)))
