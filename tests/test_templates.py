@@ -6,6 +6,7 @@ import tempfile
 import importlib
 
 import numpy as np
+import pytest
 import jax.numpy as jnp
 from taidl import Accelerator
 from taidl_to import generate_oracle
@@ -29,6 +30,26 @@ ENTRY dot_perm {
     %f = u8[64,64,2] bitcast_convert(%e);
     ROOT %Out0 = u8[8192] reshape(%f);
 }
+""")
+
+# A row sum per type the grammar lexes
+TYPES = {"s8": jnp.int8, "s32": jnp.int32, "u8": jnp.uint8, "u32": jnp.uint32,
+         "f32": jnp.float32, "f16": jnp.float16, "bf16": jnp.bfloat16}
+for t, dtype in TYPES.items():
+    w = jnp.dtype(dtype).itemsize
+    unit = f",{w}" if w > 1 else ""
+    instr = ops.add_instruction(f"sum_{t}", [], ["addr_in", "addr_out"])
+    instr.set_inputs([["d0", ["@a.addr_in"], [f"{64 * 64 * w}"]]])
+    instr.set_outputs([["d0", ["@a.addr_out"], [f"{64 * w}"]]])
+    instr.add_semantics(f"""
+ENTRY sum_{t} {{
+    %In1 = u8[{64 * 64 * w}] parameter(0);
+    %a = u8[64,64{unit}] reshape(%In1);
+    %b = {t}[64,64] bitcast_convert(%a);
+    %c = {t}[64] reduce_add(%b), dimensions={{1}};
+    %d = u8[64{unit}] bitcast_convert(%c);
+    ROOT %Out0 = u8[{64 * w}] reshape(%d);
+}}
 """)
 
 generate_oracle(ops)
@@ -71,3 +92,10 @@ def test_dot_dimension_order():
     out = run("dot_perm", [a, b], (64, 64), jnp.bfloat16)
     expected = np.einsum("pqi,qpj->ij", np.asarray(a, np.float64), np.asarray(b, np.float64))
     np.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize("t", TYPES)
+def test_reduce_add_types(t):
+    x = jnp.asarray(rng.integers(0, 2, (64, 64)), dtype=TYPES[t])
+    out = run(f"sum_{t}", [x], (64,), TYPES[t])
+    np.testing.assert_array_equal(out, np.asarray(x, np.float64).sum(axis=1))

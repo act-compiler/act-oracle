@@ -33,6 +33,26 @@ add_s32{
 	%b = s32[] parameter(1)
 	ROOT %sum = s32[] add(%a, %b)
 }
+add_u8{
+	%a = u8[] parameter(0)
+	%b = u8[] parameter(1)
+	ROOT %sum = u8[] add(%a, %b)
+}
+add_u32{
+	%a = u32[] parameter(0)
+	%b = u32[] parameter(1)
+	ROOT %sum = u32[] add(%a, %b)
+}
+add_f32{
+	%a = f32[] parameter(0)
+	%b = f32[] parameter(1)
+	ROOT %sum = f32[] add(%a, %b)
+}
+add_f16{
+	%a = f16[] parameter(0)
+	%b = f16[] parameter(1)
+	ROOT %sum = f16[] add(%a, %b)
+}
 """
 
 main_function_call = """
