@@ -182,7 +182,8 @@ def debug(prefix: str, data: str) -> None:
 				global_counters['loop_var'] += 1
 		
 
-		prefix_bytes = jnp.frombuffer(prefix.encode('utf-8'), dtype=jnp.uint8)
+		# The handler prints the prefix up to a nul
+		prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
 		prefix_len = len(prefix_bytes)
 		prefix_string = "{"
 		for i in range(len(prefix_bytes)):
