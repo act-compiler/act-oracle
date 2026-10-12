@@ -24,7 +24,7 @@ if __name__ == "__main__":
         goldens = json.load(f)
 
     kernel, api = generate_and_import_oracle(example_dir)
-    backend = importlib.import_module("oracle.decorator").backend
+    backend = importlib.import_module(kernel.__module__).backend
     reference, tol = attention_reference(data_dir)
 
     for name, record in goldens.items():

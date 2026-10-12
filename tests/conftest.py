@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import importlib
 import importlib.util
+import itertools
 
 import numpy as np
 import ml_dtypes
@@ -17,6 +18,8 @@ import jax.numpy as jnp
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")
 # The platform every oracle simulates on, set by --platform
 PLATFORM = "CPU"
+# Each imported oracle gets a package name of its own
+oracle_ids = itertools.count()
 
 
 def pytest_addoption(parser):
@@ -51,34 +54,19 @@ def import_oracle(target_dir, name):
 def generate_example(example_dir):
     """Generate the example's oracle into a temp dir and return its target dir"""
     work_dir = tempfile.mkdtemp()
-
-    # Copy spec into work_dir
-    for name in ["QKV.py", "QKV_new.py"]:
-        src = os.path.join(example_dir, name)
-        if os.path.exists(src):
-            shutil.copy(src, work_dir)
-
-    os.chdir(work_dir)
-    for name in ["QKV.py", "QKV_new.py"]:
-        path = os.path.join(work_dir, name)
-        if os.path.exists(path):
-            spec = importlib.util.spec_from_file_location("QKV_spec", path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            break
-
-    return os.path.join(work_dir, "targets", "QKV")
+    # A copy of the spec, loaded, generates its oracle beside it
+    name = os.path.basename(example_dir)
+    path = shutil.copy(os.path.join(example_dir, f"{name}.py"), work_dir)
+    spec = importlib.util.spec_from_file_location(name, path)
+    spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    accelerator, = os.listdir(os.path.join(work_dir, "targets"))
+    return os.path.join(work_dir, "targets", accelerator)
 
 
 def generate_and_import_oracle(example_dir):
     """Generate oracle into a temp dir and return (kernel, api)"""
-    oracle_dir = generate_example(example_dir)
-    sys.path.insert(0, oracle_dir)
-
-    oracle_decorator = importlib.import_module("oracle.decorator")
-    oracle_api = importlib.import_module("oracle.api")
-    oracle_decorator.set_simulation_backend(PLATFORM)
-
+    oracle_decorator, oracle_api = import_oracle(generate_example(example_dir),
+                                                 f"oracle_{next(oracle_ids)}")
     return oracle_decorator.kernel, oracle_api
 
 
