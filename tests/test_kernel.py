@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pytest
 import jax.numpy as jnp
-from conftest import EXAMPLES_DIR, generate_and_import_oracle, generate_example, load_bf16_matrix
+from conftest import EXAMPLES_DIR, generate_and_import_oracle, generate_example, import_oracle, load_bf16_matrix
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, "QKV")
 kernel, api = generate_and_import_oracle(QKV_DIR)
@@ -56,3 +56,21 @@ def test_generation_rebuilds_the_debug_handler():
     handler = glob.glob(os.path.join(build_dir, "print_handler_ext*.so"))
     # Built by this generation, not one before it
     assert handler and os.path.getmtime(handler[0]) >= start
+
+
+def test_debug_before_any_instruction(capfd):
+    # This oracle imported afresh, so debug is the first call it traces
+    decorator, fresh = import_oracle(os.path.dirname(os.path.dirname(api.__file__)), "oracle_fresh")
+
+    @decorator.kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        fresh.debug(prefix="d1", data="d1[0]")
+        fresh.load_rm(n=64, addr_in=0, addr_out=0)
+        fresh.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    k('fsim-compile')()
+    k('fsim')(*load_qkv())
+    # Nothing is loaded into d1 yet
+    lines = capfd.readouterr().out.splitlines()
+    values = lines[lines.index("d1: ") + 2].strip("[] ").split(",")
+    assert [float(v) for v in values] == [0.0] * 64

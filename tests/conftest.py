@@ -24,6 +24,18 @@ def load_bf16_matrix(path, shape):
     return jax.lax.bitcast_convert_type(j_uint8, jnp.bfloat16)
 
 
+def import_oracle(target_dir, name):
+    """Import the oracle generated under target_dir as package `name` and return (decorator, api)"""
+    oracle_dir = os.path.join(target_dir, "oracle")
+    spec = importlib.util.spec_from_file_location(name, os.path.join(oracle_dir, "__init__.py"),
+                                                  submodule_search_locations=[oracle_dir])
+    sys.modules[name] = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sys.modules[name])
+    decorator = importlib.import_module(f"{name}.decorator")
+    decorator.set_simulation_backend('CPU')
+    return decorator, importlib.import_module(f"{name}.api")
+
+
 def generate_example(example_dir):
     """Generate the example's oracle into a temp dir and return its target dir"""
     work_dir = tempfile.mkdtemp()
