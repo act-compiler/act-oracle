@@ -30,7 +30,6 @@ def reset_api():
     api.cur_scope = "main"
     api.compare_function = ""
     api.state = copy.deepcopy(api.default_state)
-    api.total_cost = 0
     api.instruction_scopes = defaultdict(list)
     api.scope_tuple_count = defaultdict(int)
 
@@ -66,9 +65,6 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
 
                 if mode == 'fsim-compile':
                     return input, api.compile_time
-
-                if mode == 'cost':
-                    return api.total_cost
 
                 if mode == 'fsim':
                     input_hbm = jnp.zeros(hbm, dtype=jnp.int8)
