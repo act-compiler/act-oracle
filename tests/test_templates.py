@@ -78,6 +78,52 @@ ENTRY {name} {{
 }}
 """)
 
+# A dot with a batch dimension
+instr = ops.add_instruction("dot_batched", [], ["addr_a", "addr_b", "addr_out"])
+instr.set_inputs([["d0", ["@a.addr_a"], ["8192"]], ["d0", ["@a.addr_b"], ["8192"]]])
+instr.set_outputs([["d0", ["@a.addr_out"], ["4096"]]])
+instr.add_semantics("""
+ENTRY dot_batched {
+    %In1 = u8[8192] parameter(0);
+    %In2 = u8[8192] parameter(1);
+    %a = u8[8,16,32,2] reshape(%In1);
+    %b = u8[8,32,16,2] reshape(%In2);
+    %c = bf16[8,16,32] bitcast_convert(%a);
+    %d = bf16[8,32,16] bitcast_convert(%b);
+    %e = bf16[8,16,16] dot(%c, %d), lhs_batch_dims={0}, lhs_contracting_dims={2}, rhs_batch_dims={0}, rhs_contracting_dims={1};
+    %f = u8[8,16,16,2] bitcast_convert(%e);
+    ROOT %Out0 = u8[4096] reshape(%f);
+}
+""")
+
+# A copy whose result type is not its operand's
+instr = ops.add_instruction("copy_retyped", [], ["addr_in", "addr_out"])
+instr.set_inputs([["d0", ["@a.addr_in"], ["8192"]]])
+instr.set_outputs([["d0", ["@a.addr_out"], ["8192"]]])
+instr.add_semantics("""
+ENTRY copy_retyped {
+    %In1 = u8[8192] parameter(0);
+    %a = u8[64,64,2] reshape(%In1);
+    %x = bf16[64,64] bitcast_convert(%a);
+    %y = f16[64,64] copy(%x);
+    %b = u8[64,64,2] bitcast_convert(%y);
+    ROOT %Out0 = u8[8192] reshape(%b);
+}
+""")
+
+# An integer buffer, stored to HBM as it starts
+ops.add_data_model("d1", [64], [64], "s32")
+instr = ops.add_instruction("store_d1", [], ["addr_out"])
+instr.set_inputs([["d1", ["0"], ["64"]]])
+instr.set_outputs([["d0", ["@a.addr_out"], ["16384"]]])
+instr.add_semantics("""
+ENTRY store_d1 {
+    %In1 = s32[64,64] parameter(0);
+    %a = u8[64,64,4] bitcast_convert(%In1);
+    ROOT %Out0 = u8[16384] reshape(%a);
+}
+""")
+
 generate_oracle(ops)
 sys.path.insert(0, os.path.join(ops.base_dir, "targets", "OPS"))
 decorator = importlib.import_module("oracle.decorator")
@@ -118,6 +164,31 @@ def test_dot_dimension_order():
     out = run("dot_perm", [a, b], (64, 64), jnp.bfloat16)
     expected = np.einsum("pqi,qpj->ij", np.asarray(a, np.float64), np.asarray(b, np.float64))
     np.testing.assert_array_equal(out, expected)
+
+
+def test_dot_batch_dimensions():
+    a, b = small_ints((8, 16, 32)), small_ints((8, 32, 16))
+    out = run("dot_batched", [a, b], (8, 16, 16), jnp.bfloat16)
+    expected = np.einsum("bik,bkj->bij", np.asarray(a, np.float64), np.asarray(b, np.float64))
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_copy_of_another_type_refused():
+    with pytest.raises(ValueError, match="does not have the result type"):
+        run("copy_retyped", [small_ints((64, 64))], (64, 64), jnp.float16)
+
+
+def test_integer_buffer_starts_at_zero():
+    # The store overwrites the ones laid where it writes
+    spec = {'addr': 0, 'shape': (64, 64), 'dtype': jnp.int32}
+
+    @decorator.kernel(hbm=16384, input=[spec], constant=[], output=[spec])
+    def k():
+        api.store_d1(0)
+
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(jnp.ones((64, 64), jnp.int32))
+    np.testing.assert_array_equal(np.asarray(outputs[0]), np.zeros((64, 64)))
 
 
 @pytest.mark.parametrize("t", TYPES)

@@ -14,46 +14,8 @@ state = {
 {{state}}
 }
 
-custom_functions = """
-add_bf16{
-	%a = bf16[] parameter(0)
-	%b = bf16[] parameter(1)
-	ROOT %sum = bf16[] add(%a, %b)
-}
-add_s8{
-	%a = s8[] parameter(0)
-	%b = s8[] parameter(1)
-	ROOT %sum = s8[] add(%a, %b)
-}
-add_s32{
-	%a = s32[] parameter(0)
-	%b = s32[] parameter(1)
-	ROOT %sum = s32[] add(%a, %b)
-}
-add_u8{
-	%a = u8[] parameter(0)
-	%b = u8[] parameter(1)
-	ROOT %sum = u8[] add(%a, %b)
-}
-add_u32{
-	%a = u32[] parameter(0)
-	%b = u32[] parameter(1)
-	ROOT %sum = u32[] add(%a, %b)
-}
-add_f32{
-	%a = f32[] parameter(0)
-	%b = f32[] parameter(1)
-	ROOT %sum = f32[] add(%a, %b)
-}
-add_f16{
-	%a = f16[] parameter(0)
-	%b = f16[] parameter(1)
-	ROOT %sum = f16[] add(%a, %b)
-}
-"""
-
-main_function_call = """
-HloModule compiled\n""" + custom_functions + "\n"
+# SSA name -> MLIR type of each traced value
+ssa_types = {}
 
 global_counters = None
 executable = None
@@ -61,111 +23,73 @@ executable = None
 mode = None
 instruction_scopes = defaultdict(list)
 
-loop_variables = ["main"]
+loop_stack = []
 cur_scope = "main"
-scope_tuple_count = defaultdict(int)
 
-compare_function = ""
-
-def generate_full_hlotext(hbm_size: int):
+def generate_module(hbm_size: int):
+	if loop_stack:
+		raise ValueError(f"loop {loop_stack[-1]['var']} has no end_loop")
 	_, prologue = semantic_init(hbm_size)
-	hlo_text = main_function_call + "\n"
+	hbm_type = ssa_types['%d0.0']
+	module = "module @compiled {\n"
 
-	hlo_text += compare_function
-
-	for scope, lines in reversed(list(instruction_scopes.items())):
-		if(scope != "main"):
-			for line in lines:
-				hlo_text += "\t" + line + "\n"
-
-	# Main call
-	hlo_text += """\nENTRY %main """
-	hlo_text += "{\n"
+	module += f"func.func public @main(%d0.0: {hbm_type}) -> {hbm_type} "
+	module += "{\n"
 	for line in prologue:
-		hlo_text += "\t" + line + "\n"
+		module += "\t" + line + "\n"
 	for line in instruction_scopes["main"]:
-		hlo_text += "\t" + line + "\n"
-	hlo_text += f"\tROOT %d0.res = u8[{hbm_size}] copy(%d0.{global_counters['d0']['counter']})\n"
-	hlo_text+= "}\n"
+		module += "\t" + line + "\n"
+	module += f"\treturn %d0.{global_counters['d0']['counter']} : {hbm_type}\n"
+	module+= "}\n}\n"
 
-	return hlo_text
+	return module
 
 def start_loop(var_name, start, end):
-	global compare_function, global_counters, loop_variables, cur_scope, instruction_scopes
-	var_name = "%" + var_name
-	counter_types = "s32[]"
-	scope_tuple_count[cur_scope] += 1
-
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
-			counter_types += ', ' + counter['type']
-	for var in loop_variables[1:]:
-		counter_types += ', s32[]'
-	compare_function += f"""
-%compare_function{global_counters['total_loop_counter']}(current_vals: ({counter_types})) -> pred[]{{
-	%comp_tuple = ({counter_types}) parameter(0)
-	%current_index = s32[] get-tuple-element(%comp_tuple), index=0
-	%target = s32[] constant({end})
-	ROOT %continue = pred[] compare(%current_index, %target), direction=LT
-}}
- """
-	tuple_num = scope_tuple_count[cur_scope]
-	initial_tuple = f"%initial_index.{tuple_num}"
-	num_counters = 0
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
-			initial_tuple += f", %{name}.{counter['counter']}"
-			num_counters += 1
-	for var in loop_variables[1:]:
-		initial_tuple += f", {var}"
-	
-	call_statement = f"""
-	%initial_index.{tuple_num} = s32[] constant({start})
-	  %init_tuple.{tuple_num} = tuple({initial_tuple})
-	%current_tuple.{tuple_num} = ({counter_types}) while(%init_tuple.{tuple_num}), body=%while_body{global_counters['total_loop_counter']}, condition=%compare_function{global_counters['total_loop_counter']}
- """
-	instruction_scopes[cur_scope].append(call_statement)
-	
-	while_prologue = f"""
-%while_body{global_counters['total_loop_counter']}(current_vals: ({counter_types})) -> ({counter_types}){'{'}
-	%start_tuple = ({counter_types}) parameter(0)
-	{var_name} = s32[] get-tuple-element(%start_tuple), index=0\n
- """
-	cur_count = 1
-	for var in loop_variables[1:]:
-		while_prologue += f"\t{var} = s32[] get-tuple-element(%start_tuple), index={cur_count + num_counters}\n"
-		cur_count += 1
-	
-	cur_ind = 1
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
-			while_prologue += f"\t%{name}.{counter['counter']} = {counter['type']} get-tuple-element(%start_tuple), index={cur_ind}\n"
-			cur_ind += 1
-	cur_scope = var_name
-	instruction_scopes[cur_scope].append(while_prologue)
-	loop_variables.append(var_name)
+	global cur_scope
+	loop = {'var': "%" + var_name, 'id': global_counters['total_loop_counter'], 'start': start, 'end': end,
+			'parent': cur_scope, 'inits': [], 'args': [], 'types': []}
 	global_counters['total_loop_counter'] += 1
+	# The body names each buffer afresh as a block argument
+	for name, counter in global_counters.items():
+		if isinstance(counter, dict):
+			loop['inits'].append(f"%{name}.{counter['counter']}")
+			counter['counter'] += 1
+			loop['args'].append(f"%{name}.{counter['counter']}")
+			loop['types'].append(mlir_type(counter['type']))
+			ssa_types[loop['args'][-1]] = loop['types'][-1]
+	loop_stack.append(loop)
+	cur_scope = f"loop{loop['id']}"
 
 def end_loop():
-	global loop_variables, global_counters, instruction_scopes, cur_scope
-	var_name = loop_variables[-1]
-	instruction_scopes[cur_scope].append(f"%new_loop_index = s32[] add({var_name}, s32[] constant(1))")
-	ret_val = f"ROOT %result = tuple(%new_loop_index"
+	global cur_scope
+	if not loop_stack:
+		raise ValueError("end_loop has no start_loop")
+	loop = loop_stack.pop()
+	body = instruction_scopes.pop(cur_scope, [])
+	cur_scope = loop['parent']
+	n = f"%loop{loop['id']}"
+	yields, results = [], []
 	for name, counter in global_counters.items():
 		if isinstance(counter, dict):
-			ret_val += f", %{name}.{counter['counter']}"
-	for var in loop_variables[1:-1]:
-		ret_val += f", {var}"
-	ret_val += ')\n}'
-	instruction_scopes[cur_scope].append(ret_val)
-	loop_variables.pop()
-	cur_scope = loop_variables[-1]
-	cur_ind = 1
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
+			yields.append(f"%{name}.{counter['counter']}")
 			counter['counter'] += 1
-			instruction_scopes[cur_scope].append(f"%{name}.{counter['counter']} = {counter['type']} get-tuple-element(%current_tuple.{scope_tuple_count[cur_scope]}), index={cur_ind}")
-			cur_ind += 1
+			results.append(f"%{name}.{counter['counter']}")
+			ssa_types[results[-1]] = mlir_type(counter['type'])
+	types = ", ".join(["tensor<i64>"] + loop['types'])
+	pairs = ", ".join(f"{arg} = {init}" for arg, init in zip([loop['var']] + loop['args'], [f"{n}.start"] + loop['inits']))
+	lines = [f"{n}.start = stablehlo.constant dense<{loop['start']}> : tensor<i64>",
+			 f"{', '.join([n + '.var'] + results)} = stablehlo.while({pairs}) : {types}",
+			 "cond {",
+			 f"\t{n}.end = stablehlo.constant dense<{loop['end']}> : tensor<i64>",
+			 f"\t{n}.more = stablehlo.compare LT, {loop['var']}, {n}.end : (tensor<i64>, tensor<i64>) -> tensor<i1>",
+			 f"\tstablehlo.return {n}.more : tensor<i1>",
+			 "} do {"]
+	lines += ["\t" + line for item in body for line in item.split("\n") if line.strip()]
+	lines += [f"\t{n}.one = stablehlo.constant dense<1> : tensor<i64>",
+			  f"\t{n}.next = stablehlo.add {loop['var']}, {n}.one : tensor<i64>",
+			  f"\tstablehlo.return {', '.join([n + '.next'] + yields)} : {types}",
+			  "}"]
+	instruction_scopes[cur_scope].append("\n".join(lines))
 
 def debug(prefix: str, data: str) -> None:
 	global instruction_scopes, cur_scope, state, global_counters
@@ -176,12 +100,12 @@ def debug(prefix: str, data: str) -> None:
 		# The handler prints the prefix up to a nul
 		prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
 		prefix_len = len(prefix_bytes)
-		prefix_string = "{"
+		prefix_string = "["
 		for i in range(len(prefix_bytes)):
 			if i != 0:
 				prefix_string += ", "
 			prefix_string += f"{prefix_bytes[i]}"
-		prefix_string += "}"
+		prefix_string += "]"
 
 		data_name = data.split("[")[0]
 
@@ -200,18 +124,18 @@ def debug(prefix: str, data: str) -> None:
 		
 		data_type = global_counters[data_name]["type"].split("[")[0]
 		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice', data_type, data_dims)
-		line = slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {})
+		line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {}, ssa_types)
 		output.append(line)
 
 		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice')
 		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
-		line = f'{lhs_loc} = {lhs_type} convert({rhs_loc})'
+		line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 		output.append(line)
 
 		rhs_loc = parameter_util(global_counters,  {}, state, {}, {}, 'debug_slice_f64')
-		debug_prefix_loc = f'debug_prefix.{global_counters["instruction_counter"]}'
-		output.append(f'{debug_prefix_loc} = u8[{prefix_len}] constant({prefix_string})')
-		output.append(f'call.{global_counters["instruction_counter"]} = s32[] custom-call({debug_prefix_loc}, {rhs_loc}), custom_call_target="print_handler", custom_call_has_side_effect=true, api_version=API_VERSION_TYPED_FFI')
+		debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
+		output.append(f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>')
+		output.append(f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>')
 		instruction_scopes[cur_scope] += output
 		global_counters['instruction_counter'] += 1
 
@@ -231,8 +155,8 @@ lvars = {}
 output = []
 for name, arg in attrs.items():
 	if(isinstance(arg, str)):
-		hlo_lines, new_name = generate_loop_eq_vars(arg, global_counters)
-		output.append(hlo_lines)
+		expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
+		output.append(expr_lines)
 		attrs[name] = new_name
 		global_counters['loop_var'] += 1
 
@@ -247,7 +171,7 @@ global_counters['instruction_counter'] += 1
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 slice_configs = {{slice}}
-line = slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, comp_attrs)
+line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, attrs, state, lvars, comp_attrs, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SLICE_STORE ###
@@ -255,47 +179,46 @@ rhs_update = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{rhs_name}})
 start_indices = {{slice}}
-lines = slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices,
-					attrs, state, lvars, comp_attrs, global_counters['start_counter'])
-global_counters["start_counter"] += 1
+lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices,
+					attrs, state, lvars, comp_attrs, ssa_types)
 output += lines
 
 ### TEMPLATE: RESHAPE ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = reshape_helper(lhs_loc, lhs_type, rhs_loc)
+line = sh_cast("reshape", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: CONVERT ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = convert_helper(lhs_loc, lhs_type, rhs_loc)
+line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: COPY ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} copy({rhs_loc})'
+line = sh_copy(lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: EXP ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} exponential({rhs_loc})'
+line = sh_unary("exponential", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BITCAST_CONVERT ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} bitcast-convert({rhs_loc})'
+line = sh_cast("bitcast_convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DOT ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = dot_helper(lhs_loc, lhs_type, a_loc, b_loc,
-				  {{lb}}, {{lc}}, {{rb}}, {{rc}})
+line = sh_dot(lhs_loc, lhs_type, a_loc, b_loc,
+			  {{lb}}, {{lc}}, {{rb}}, {{rc}}, ssa_types)
 output.append(line)
 
 ### TEMPLATE: TRANSPOSE ###
@@ -303,72 +226,70 @@ in_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dims = "{{{dims}}}"
 dims = dims.replace("'","")
-line = f'{lhs_loc} = {lhs_type} transpose({in_loc}), dimensions={dims}'
+line = sh_transpose(lhs_loc, lhs_type, in_loc, dims, ssa_types)
 output.append(line)
 
 ### TEMPLATE: ADD ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} add({a_loc}, {b_loc})'
+line = sh_binary("add", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SUBTRACT ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} subtract({a_loc}, {b_loc})'
+line = sh_binary("subtract", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MULTIPLY ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} multiply({a_loc}, {b_loc})'
+line = sh_binary("multiply", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DIVIDE ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} divide({a_loc}, {b_loc})'
+line = sh_binary("divide", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: REDUCE ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dim = {{dims}}
-apply = {{to_apply}}
-dtype = lhs_type.split('[')[0]
-line = f'{lhs_loc} = {lhs_type} reduce({a_loc}, {dtype}[] constant(0)), dimensions={dim}, to_apply={apply}'
+line = sh_reduce("add", lhs_loc, lhs_type, a_loc, dim, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BROADCAST ###
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dims = "{{{dims}}}"
-line = f"{lhs_loc} = {lhs_type} broadcast({b_loc}), dimensions={dims}"
+line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MAXIMUM ###
 rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} maximum({rhs_first}, {rhs_second})'
+line = sh_binary("maximum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MINIMUM ###
 rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} minimum({rhs_first}, {rhs_second})'
+line = sh_binary("minimum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: XOR ###
 rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = f'{lhs_loc} = {lhs_type} xor({rhs_first}, {rhs_second})'
+line = sh_binary("xor", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SEMANTIC_INIT ###
@@ -376,18 +297,16 @@ def semantic_init(hbm_size):
 	global_counters = {
 		'd0': {
 			'type': f'u8[{hbm_size}]',
-			'dim': '{0}',
 			'counter': 0
 		},
 {{custom_counters}}
 		'instruction_counter': 0,
-		'start_counter': 0,
 		'total_loop_counter': 0,
 		'loop_var': 0,
 	}
 
 	prologue = []
-	prologue.append(f'%d0.0 = u8[{hbm_size}]{{0}} parameter(0)')
+	ssa_types['%d0.0'] = mlir_type(f'u8[{hbm_size}]')
 
 {{custom_prologue}}
 	return global_counters, prologue
@@ -395,8 +314,7 @@ def semantic_init(hbm_size):
 ### TEMPLATE: SEMANTIC_COUNTER ###
 '{{var_name}}': {
 	'type': '{{var_type}}{{var_dim}}',
-	'dim': '{{var_num}}',
 	'counter': 0
 },
 ### TEMPLATE: PROLOGUE_INIT ###
-	prologue.append(f'%{{var_name}}.0 = {{var_type}}{{var_dim}}{{{var_num}}} constant(0)')
+	prologue.append(sh_zeros('%{{var_name}}.0', '{{var_type}}{{var_dim}}', ssa_types))

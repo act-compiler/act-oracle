@@ -76,6 +76,26 @@ def test_debug_before_any_instruction(capfd):
     assert [float(v) for v in values] == [0.0] * 64
 
 
+def test_unended_loop_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop("i", 0, 4)
+        api.load_rm(n=16, addr_in="2048 * %i", addr_out="16 * %i")
+
+    with pytest.raises(ValueError, match="loop %i has no end_loop"):
+        k('fsim-compile')()
+
+
+def test_unstarted_loop_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.end_loop()
+
+    with pytest.raises(ValueError, match="end_loop has no start_loop"):
+        k('fsim-compile')()
+
+
 def looped():
     """The attention kernel with its Q and V loads and its store in loops"""
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)

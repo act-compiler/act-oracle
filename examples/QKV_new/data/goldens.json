@@ -6,8 +6,8 @@
       "attention_k3",
       "attention_k4"
     ],
-    "jax": "0.4.33",
-    "jaxlib": "0.4.33",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
     "platform": "cpu",
     "machine": "x86_64"
   }
