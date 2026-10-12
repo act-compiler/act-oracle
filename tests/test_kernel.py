@@ -107,6 +107,23 @@ def test_unstarted_loop_refused():
         k('fsim-compile')()
 
 
+def test_two_oracles_print(capfd):
+    other_decorator, other_api = import_oracle(generate_example(QKV_DIR), "oracle_other")
+    # Each oracle registers its own debug handler
+    Q, K, V = load_qkv()
+    for kern, a, prefix in ((kernel, api, "first"), (other_decorator.kernel, other_api, "second")):
+        @kern(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+        def k():
+            a.load_rm(n=64, addr_in=0, addr_out=0)
+            a.debug(prefix=prefix, data="d1[0]")
+            a.store_rm(n=64, addr_in=0, addr_out=24576)
+
+        k('fsim-compile')()
+        k('fsim')(Q, K, V)
+    lines = capfd.readouterr().out.splitlines()
+    assert "first: " in lines and "second: " in lines
+
+
 def looped():
     """The attention kernel with its Q and V loads and its store in loops"""
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
