@@ -33,7 +33,6 @@ def test_unknown_mode_refused(mode):
         k(mode)
 
 
-@pytest.mark.skipif(PLATFORM == "GPU", reason="the debug handler prints from the CPU alone")
 def test_debug_prints_values(capfd):
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():
@@ -60,7 +59,6 @@ def test_generation_rebuilds_the_debug_handler():
     assert handler and os.path.getmtime(handler[0]) >= start
 
 
-@pytest.mark.skipif(PLATFORM == "GPU", reason="the debug handler prints from the CPU alone")
 def test_debug_before_any_instruction(capfd):
     # This oracle imported afresh, so debug is the first call it traces
     decorator, fresh = import_oracle(os.path.dirname(os.path.dirname(api.__file__)), "oracle_fresh")

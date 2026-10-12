@@ -4,6 +4,10 @@
 #include "nanobind/nanobind.h"
 #include "xla/ffi/api/ffi.h"
 
+#ifdef WITH_CUDA
+#include <cuda_runtime_api.h>
+#endif
+
 namespace nb = nanobind;
 namespace ffi = xla::ffi;
 
@@ -58,11 +62,15 @@ void print_buffer(const double* data, const std::vector<int64_t>& dims) {
   std::cout << std::endl;
 }
 
-auto PrintImpl(ffi::Buffer<ffi::DataType::U8> prefix, ffi::Buffer<ffi::DataType::F64> buf, ffi::Result<ffi::Buffer<ffi::DataType::S32>> out) {
-  auto dims = buf.dimensions();
+// Print a host buffer under its prefix
+void print_prefixed(const uint8_t* prefix, const double* data, ffi::Span<const int64_t> dims) {
   std::vector<int64_t> dimensions(dims.begin(), dims.end());
-  std::cout << prefix.typed_data() << ": " << std::endl;
-  print_buffer(buf.typed_data(), dimensions);
+  std::cout << prefix << ": " << std::endl;
+  print_buffer(data, dimensions);
+}
+
+auto PrintImpl(ffi::Buffer<ffi::DataType::U8> prefix, ffi::Buffer<ffi::DataType::F64> buf, ffi::Result<ffi::Buffer<ffi::DataType::S32>> out) {
+  print_prefixed(prefix.typed_data(), buf.typed_data(), buf.dimensions());
   return ffi::Error::Success();
 }
 
@@ -74,11 +82,40 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Arg<ffi::Buffer<ffi::DataType::F64>>()
         .Ret<ffi::Buffer<ffi::DataType::S32>>());
 
-// Nanobind module definition
+#ifdef WITH_CUDA
+// Copy both buffers to host on the call's stream, then print
+auto PrintCudaImpl(cudaStream_t stream, ffi::Buffer<ffi::DataType::U8> prefix, ffi::Buffer<ffi::DataType::F64> buf, ffi::Result<ffi::Buffer<ffi::DataType::S32>> out) {
+  std::vector<uint8_t> host_prefix(prefix.element_count());
+  std::vector<double> host_buf(buf.element_count());
+  cudaError_t err = cudaMemcpyAsync(host_prefix.data(), prefix.typed_data(), prefix.size_bytes(), cudaMemcpyDeviceToHost, stream);
+  if (err == cudaSuccess) err = cudaMemcpyAsync(host_buf.data(), buf.typed_data(), buf.size_bytes(), cudaMemcpyDeviceToHost, stream);
+  if (err == cudaSuccess) err = cudaStreamSynchronize(stream);
+  if (err != cudaSuccess) return ffi::Error::Internal(cudaGetErrorString(err));
+  print_prefixed(host_prefix.data(), host_buf.data(), buf.dimensions());
+  return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    PrintCudaHandler, PrintCudaImpl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::Buffer<ffi::DataType::U8>>()
+        .Arg<ffi::Buffer<ffi::DataType::F64>>()
+        .Ret<ffi::Buffer<ffi::DataType::S32>>());
+#endif
+
+// Nanobind module definition: targets by platform, then by name
 NB_MODULE(print_handler_ext, m) {
     m.def("registrations", []() {
         nb::dict registrations;
-        registrations["print_handler"] = nb::capsule(reinterpret_cast<void*>(PrintHandler));
+        nb::dict cpu;
+        cpu["print_handler"] = nb::capsule(reinterpret_cast<void*>(PrintHandler));
+        registrations["cpu"] = cpu;
+#ifdef WITH_CUDA
+        nb::dict cuda;
+        cuda["print_handler"] = nb::capsule(reinterpret_cast<void*>(PrintCudaHandler));
+        registrations["CUDA"] = cuda;
+#endif
         return registrations;
     });
 }

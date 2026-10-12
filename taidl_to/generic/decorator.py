@@ -34,8 +34,10 @@ def reset_api():
 
 
 def compile_module(module: str):
-    for name, target in print_handler_ext.registrations().items():
-        ffi.register_ffi_target(name, target)
+    # The debug handler, on each platform it was built for
+    for platform, targets in print_handler_ext.registrations().items():
+        for name, target in targets.items():
+            ffi.register_ffi_target(name, target, platform=platform)
 
     options = get_compile_options(num_replicas=1, num_partitions=1)
 
