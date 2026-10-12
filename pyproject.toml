@@ -20,6 +20,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["taidl_to", "taidl_to.*"]
 
 [tool.setuptools.package-data]
 "taidl_to.templates" = ["*.txt"]
