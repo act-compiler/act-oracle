@@ -5,6 +5,7 @@ It coordinates template-based generation of Python API files for accelerators.
 """
 
 import os
+import sys
 from pathlib import Path
 import shutil
 import subprocess
@@ -47,24 +48,12 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
 
     print(f"Oracle API generation complete for {accelerator.name}")
 
-    # Build the xla-debug
+    # Build the debug handler into the oracle, afresh at every generation
     print(f"Building oracle for {accelerator.name}")
     xla_debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xla-debug')
-    xla_build_dir = os.path.join(xla_debug_dir, 'build')
-    if os.path.exists(xla_build_dir):
-        # shutil.rmtree(xla_build_dir)
-        pass  # TODO: Workaround for now, remove when arm64 docker is fixed
-    else:  # TODO: Workaround for now, remove when arm64 docker is fixed
-        subprocess.run(["./build.sh"], cwd=xla_debug_dir, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=True)
+    build_dir = os.path.join(oracle_gen_dir, 'build')
+    subprocess.run(["cmake", "-S", xla_debug_dir, "-B", build_dir,
+                    f"-DPython_EXECUTABLE={sys.executable}"], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["cmake", "--build", build_dir], check=True, stdout=subprocess.DEVNULL)
     print(f"Oracle build complete for {accelerator.name}")
-
-    # Copy built xla-debug to final destination
-    if os.path.exists(xla_build_dir):
-        dest_dir = os.path.join(oracle_gen_dir, 'build')
-        if os.path.exists(dest_dir):
-            shutil.rmtree(dest_dir)
-        shutil.copytree(xla_build_dir, dest_dir)
-        print(f"The oracle API is located at {oracle_gen_dir}/")
-    else:
-        raise RuntimeError("xla-debug build failed. Please check the build logs.")
+    print(f"The oracle API is located at {oracle_gen_dir}/")

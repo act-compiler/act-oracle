@@ -24,8 +24,8 @@ def load_bf16_matrix(path, shape):
     return jax.lax.bitcast_convert_type(j_uint8, jnp.bfloat16)
 
 
-def generate_and_import_oracle(example_dir):
-    """Generate oracle into a temp dir and return (kernel, api)"""
+def generate_example(example_dir):
+    """Generate the example's oracle into a temp dir and return its target dir"""
     work_dir = tempfile.mkdtemp()
 
     # Copy spec into work_dir
@@ -43,7 +43,12 @@ def generate_and_import_oracle(example_dir):
             spec.loader.exec_module(module)
             break
 
-    oracle_dir = os.path.join(work_dir, "targets", "QKV")
+    return os.path.join(work_dir, "targets", "QKV")
+
+
+def generate_and_import_oracle(example_dir):
+    """Generate oracle into a temp dir and return (kernel, api)"""
+    oracle_dir = generate_example(example_dir)
     sys.path.insert(0, oracle_dir)
 
     oracle_decorator = importlib.import_module("oracle.decorator")
