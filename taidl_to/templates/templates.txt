@@ -217,7 +217,6 @@ def debug(prefix: str, data: str) -> None:
 
 ### TEMPLATE: API_FUNC ###
 global instruction_scopes, cur_scope, comp_attrs, state, global_counters
-global_counters['loop_counter'] = 0
 comp_attrs = {
 {{set_comp_attr}}
 }
@@ -243,18 +242,6 @@ for name, arg in comp_attrs.items():
 {{fsim_compile}}
 instruction_scopes[cur_scope] += (output)
 global_counters['instruction_counter'] += 1
-
-### TEMPLATE: NORM_LHS ###
-lhs_loc = f'%{{lhs.var_name}}'
-dim_sizes = {{lhs.array}}
-dim_sizes = simplify_vals(dim_sizes, attrs, state, lvars)
-dim_sizes = ','.join(dim_sizes)
-lhs_type = f'{{lhs.var_type}}[{dim_sizes}]{{{lhs.num}}}'
-
-### TEMPLATE: REGISTER_LHS ###
-global_counters["{{lhs.var_orig}}"]["counter"] += 1
-lhs_loc = f'%{{lhs.var_name}}'
-lhs_type = f'{global_counters["{{lhs.var_orig}}"]["type"]}{{{lhs.num}}}'
 
 ### TEMPLATE: SLICE_LOAD ###
 rhs_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{rhs_name}})
@@ -319,27 +306,6 @@ dims = dims.replace("'","")
 line = f'{lhs_loc} = {lhs_type} transpose({in_loc}), dimensions={dims}'
 output.append(line)
 
-### TEMPLATE: SLICE ###
-in_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = "{{{dims}}}"
-dims = dims[2:-2]
-dims = dims.replace("[","")
-dims = dims.replace("]","")
-dims = dims.replace("`","")
-dims = dims.split(",")
-dims = non_dynamic_slice(dims, attrs, state, lvars, comp_attrs)
-line = f'{lhs_loc} = {lhs_type} slice({in_loc}), {dims}'
-output.append(line)
-
-### TEMPLATE: CONCATENATE ###
-in_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{in}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = "{{{dims}}}"
-dims = dims.replace("'","")
-line = f'{lhs_loc} = {lhs_type} concatenate({in_loc}), dimensions={{0}}'
-output.append(line)
-
 ### TEMPLATE: ADD ###
 a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
@@ -377,34 +343,11 @@ dtype = lhs_type.split('[')[0]
 line = f'{lhs_loc} = {lhs_type} reduce({a_loc}, {dtype}[] constant(0)), dimensions={dim}, to_apply={apply}'
 output.append(line)
 
-### TEMPLATE: DYNAMIC_UPDATE_SLICE ###
-a_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dim = {{dims}}
-line = f'{lhs_loc} = {lhs_type} dynamic-update-slice({a_loc}, {b_loc}, s32[] constant(0), s32[] constant(0), s32[] constant(0), s32[] constant(0))'
-output.append(line)
-
-
-### TEMPLATE: CONSTANT ###
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-simplify = simplify_vals([{{const}}], attrs, state, lvars, comp_attrs)
-const= simplify[0]
-line = f"{lhs_loc} = {lhs_type} constant({const})"
-output.append(line)
-
 ### TEMPLATE: BROADCAST ###
 b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dims = "{{{dims}}}"
 line = f"{lhs_loc} = {lhs_type} broadcast({b_loc}), dimensions={dims}"
-output.append(line)
-
-### TEMPLATE: BROADCAST_DIM ###
-b_loc = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = create_num_str({{size}})
-line = f"{lhs_loc} = {lhs_type} broadcast({b_loc}), dimensions={{0,1}}"
 output.append(line)
 
 ### TEMPLATE: MAXIMUM ###
@@ -421,44 +364,6 @@ lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {
 line = f'{lhs_loc} = {lhs_type} minimum({rhs_first}, {rhs_second})'
 output.append(line)
 
-### TEMPLATE: SELECT_LT ###
-rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
-rhs_choice1 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{C}})
-rhs_choice2 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{D}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-comp_loc = f'comp.{global_counters["loop_counter"]}.{global_counters["instruction_counter"]}'
-lhs_dim = get_dim({{size}}, attrs, state, lvars, comp_attrs)
-line = f'{comp_loc} = pred{lhs_dim} compare({rhs_first}, {rhs_second}), direction=LT\n'
-line += f'\t{lhs_loc} = {lhs_type} select({comp_loc}, {rhs_choice1}, {rhs_choice2})'
-output.append(line)
-
-### TEMPLATE: SELECT_EQ ###
-rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
-rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
-rhs_choice1 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{C}})
-rhs_choice2 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{D}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-comp_loc = f'comp.{global_counters["loop_counter"]}.{global_counters["instruction_counter"]}'
-lhs_dim = get_dim({{size}}, attrs, state, lvars, comp_attrs)
-line = f'{comp_loc} = pred{lhs_dim} compare({rhs_first}, {rhs_second}), direction=LT\n'
-line += f'\t{lhs_loc} = {lhs_type} select({comp_loc}, {rhs_choice1}, {rhs_choice2})'
-output.append(line)
-
-### TEMPLATE: SELECT_EQ_VAR ###
-rhs_first = {{A}}
-rhs_second = {{B}}
-rhs_choice1 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{C}})
-rhs_choice2 = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{D}})
-lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-comp_loc = f'comp.{global_counters["loop_counter"]}.{global_counters["instruction_counter"]}'
-lhs_dim = get_dim({{size}}, attrs, state, lvars, comp_attrs)
-line = f'%{comp_loc}.1 = pred[] compare(%{rhs_first}, s32[] constant(0)), direction=EQ\n'
-line += f'%{comp_loc}.2 = pred[] compare(%{rhs_second}, s32[] constant(0)), direction=EQ\n'
-line += f'%{comp_loc} = pred[] and(%{comp_loc}.1, %{comp_loc}.2)\n'
-line += f'\t{lhs_loc} = {lhs_type} select(%{comp_loc}, {rhs_choice1}, {rhs_choice2})'
-output.append(line)
-
 ### TEMPLATE: XOR ###
 rhs_first = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters,  attrs, state, lvars, comp_attrs, {{B}})
@@ -466,21 +371,6 @@ lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {
 line = f'{lhs_loc} = {lhs_type} xor({rhs_first}, {rhs_second})'
 output.append(line)
 
-### TEMPLATE: IF ###
-simplify = simplify_vals(["{{config}}"], attrs, state, lvars, comp_attrs)
-result = eval(simplify[0])
-if(result):
-
-### TEMPLATE: ELSE ###
-else:
-
-### TEMPLATE: REPEAT ###
-loop_range = simplify_vals(["{{loop_range}}"], attrs, state, lvars, comp_attrs)
-loop_range = int(loop_range[0])
-
-for {{loop_var}} in range(loop_range):
-tab lvars['{{loop_var}}'] = {{loop_var}}
-tab global_counters["loop_counter"] += 1
 ### TEMPLATE: SEMANTIC_INIT ###
 def semantic_init(hbm_size):
 	global_counters = {
@@ -493,7 +383,6 @@ def semantic_init(hbm_size):
 		'instruction_counter': 0,
 		'start_counter': 0,
 		'total_loop_counter': 0,
-		'loop_counter': 0,
 		'loop_var': 0,
 	}
 
@@ -511,5 +400,3 @@ def semantic_init(hbm_size):
 },
 ### TEMPLATE: PROLOGUE_INIT ###
 	prologue.append(f'%{{var_name}}.0 = {{var_type}}{{var_dim}}{{{var_num}}} constant(0)')
-### TEMPLATE: PROLOGUE_LINE ###
-f'%{{var_name}}.0 = {{var_type}}{{var_dim}}{{{var_num}}} constant(0)',
