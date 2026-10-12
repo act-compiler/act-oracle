@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pytest
 import jax.numpy as jnp
-from conftest import EXAMPLES_DIR, generate_and_import_oracle, generate_example, import_oracle, load_bf16_matrix
+from conftest import EXAMPLES_DIR, generate_and_import_oracle, generate_example, import_oracle, load_bf16_matrix, run_kernel
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, "QKV")
 kernel, api = generate_and_import_oracle(QKV_DIR)
@@ -74,3 +74,63 @@ def test_debug_before_any_instruction(capfd):
     lines = capfd.readouterr().out.splitlines()
     values = lines[lines.index("d1: ") + 2].strip("[] ").split(",")
     assert [float(v) for v in values] == [0.0] * 64
+
+
+def looped():
+    """The attention kernel with its Q and V loads and its store in loops"""
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop("i", 0, 4)
+        api.load_rm(n=16, addr_in="2048 * %i", addr_out="16 * %i")
+        api.end_loop()
+        api.load_cm(n=64, addr_in=8192, addr_out=64)
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.softmax(n=64, addr=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.start_loop("i", 0, 4)
+        api.load_rm(n=16, addr_in="16384 + 2048 * %i", addr_out="64 + 16 * %i")
+        api.end_loop()
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.start_loop("j", 0, 8)
+        api.store_rm(n=8, addr_in="8 * %j", addr_out="24576 + 1024 * %j")
+        api.end_loop()
+    return k
+
+
+def nested():
+    """The attention kernel with its Q and V loads in two-deep loops"""
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        # Each half of Q in two inner loops of eight rows
+        api.start_loop("io", 0, 2)
+        api.start_loop("ii", 0, 2)
+        api.load_rm(n=8, addr_in="4096 * %io + 1024 * %ii", addr_out="32 * %io + 8 * %ii")
+        api.end_loop()
+        api.start_loop("jj", 0, 2)
+        api.load_rm(n=8, addr_in="4096 * %io + 2048 + 1024 * %jj", addr_out="32 * %io + 16 + 8 * %jj")
+        api.end_loop()
+        api.end_loop()
+        api.load_cm(n=64, addr_in=8192, addr_out=64)
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.softmax(n=64, addr=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.start_loop("io", 0, 2)
+        api.start_loop("ii", 0, 2)
+        api.load_rm(n=16, addr_in="16384 + 4096 * %io + 2048 * %ii", addr_out="64 + 32 * %io + 16 * %ii")
+        api.end_loop()
+        api.end_loop()
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+    return k
+
+
+@pytest.mark.parametrize("twin", [looped, nested])
+def test_loop_matches_unrolled(twin):
+    unrolled = run_kernel(kernel, api, "attention",
+                          os.path.join(QKV_DIR, "assembly"), os.path.join(QKV_DIR, "data"))
+    k = twin()
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(*load_qkv())
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(unrolled).tobytes()
