@@ -14,8 +14,9 @@ authors = [
 readme = "README.md"
 dependencies = [
     "taidl @ git+https://github.com/act-compiler/taidl.git@v2.3",
-    "numpy",
+    "numpy>=2.0",
     "jax==0.10.2",
+    "jaxlib==0.10.2",
 ]
 
 [tool.setuptools.packages.find]
