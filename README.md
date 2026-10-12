@@ -19,5 +19,20 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.3
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.4
 ```
+
+## Platforms
+
+An oracle simulates on the CPU unless the generated oracle's `decorator.set_simulation_backend('GPU')` moves it to an NVIDIA GPU; any other platform name raises `ValueError`.
+Setting a platform, which the first kernel launch does with the CPU if nothing has, also turns on jax's `jax_enable_x64` and sets `jax_default_matmul_precision` to `highest` for the whole process.
+
+## Testing
+
+```bash
+./tests/pytest.sh                 # every test, every oracle on the CPU
+./tests/pytest.sh --platform GPU  # the same tests on an NVIDIA GPU
+```
+
+`tests/pytest.sh` runs the tests in `devanshdvj/act-env:py3.14-jax0.10.2`, the image `docker/act.env` names, in its tag for the host's architecture, amd64 or arm64, and in its CUDA 13 tag where `nvidia-smi` succeeds and docker lists the nvidia runtime; the CI pulls its amd64 tag.
+On the CPU an attention kernel equals its golden bit for bit; on a GPU the goldens are skipped, and an attention kernel is held to its NumPy reference within four bf16 ulps of the largest magnitude in V, twice the largest deviation measured on an NVIDIA H100 NVL.
