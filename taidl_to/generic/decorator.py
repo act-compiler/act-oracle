@@ -39,18 +39,22 @@ def compile_module(module: str):
             ffi.register_ffi_target(name, target, platform=platform)
 
     options = get_compile_options(num_replicas=1, num_partitions=1)
+    device = backend.devices()[0]
 
     start = time.time()
-    executable = backend.compile_and_load(module, [backend.devices()[0]], options)
+    executable = backend.compile_and_load(module, [device], options)
     elapsed = round((time.time() - start) * 1000, 3)
 
-    api.executable = executable
-    return elapsed
+    return executable, device, elapsed
 
 
 def kernel(hbm: int, input: list, output: list, constant=[]):
     def decorator(func):
+        # One executable per decorated kernel, on its own device
+        executable, device = None, None
+
         def launchable(mode):
+            nonlocal executable, device
             if mode not in ('fsim', 'fsim-compile'):
                 raise ValueError(f"unknown oracle mode {mode!r}")
 
@@ -68,10 +72,10 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     for arg, spec in zip(args, input):
                         assert arg.shape == spec['shape'], "arg.shape != input.shape"
                         assert arg.dtype == spec['dtype'], "arg.dtype != input.dtype"
-                        operands.append(jax.device_put(arg, device=backend.devices()[0]))
+                        operands.append(jax.device_put(arg, device=device))
 
                     start = time.time()
-                    outputs = api.executable.execute(operands)
+                    outputs = executable.execute(operands)
                     jax.block_until_ready(outputs)
                     elapsed = round((time.time() - start) * 1000, 3)
 
@@ -87,7 +91,7 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                 api.global_counters = counters
                 func()
                 module = api.generate_module(hbm, input, constant, output)
-                api.compile_time = compile_module(module)
+                executable, device, api.compile_time = compile_module(module)
 
             return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
         return launchable
