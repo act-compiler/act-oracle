@@ -10,6 +10,7 @@ import pytest
 import jax.numpy as jnp
 from taidl import Accelerator
 from taidl_to import generate_oracle
+from conftest import PLATFORM
 
 # One instruction per check, reading and writing HBM
 ops = Accelerator("OPS", base_dir=tempfile.mkdtemp())
@@ -128,7 +129,7 @@ generate_oracle(ops)
 sys.path.insert(0, os.path.join(ops.base_dir, "targets", "OPS"))
 decorator = importlib.import_module("oracle.decorator")
 api = importlib.import_module("oracle.api")
-decorator.set_simulation_backend('CPU')
+decorator.set_simulation_backend(PLATFORM)
 
 # Inputs at fixed HBM offsets, output after them
 IN_ADDRS = [0, 16384]

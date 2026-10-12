@@ -1,14 +1,16 @@
 """Test QKV oracle with all kernels"""
 
 import os
+import pytest
 import numpy as np
 import jax.numpy as jnp
-from conftest import EXAMPLES_DIR, generate_and_import_oracle, run_kernel, load_golden, attention_reference, bf16
+from conftest import EXAMPLES_DIR, PLATFORM, generate_and_import_oracle, run_kernel, load_golden, attention_reference, bf16
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, "QKV")
 kernel, api = generate_and_import_oracle(QKV_DIR)
 
 
+@pytest.mark.skipif(PLATFORM == "GPU", reason="the goldens are exact on the CPU alone")
 def test_attention():
     output = run_kernel(kernel, api, "attention",
                         os.path.join(QKV_DIR, "assembly"),
