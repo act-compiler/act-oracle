@@ -3,7 +3,6 @@ import copy
 from collections import defaultdict
 
 import jax
-import jax.numpy as jnp
 from jax.extend.backend import get_backend, get_compile_options
 from jax import ffi
 
@@ -63,36 +62,18 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     return input, api.compile_time
 
                 if mode == 'fsim':
-                    input_hbm = jnp.zeros(hbm, dtype=jnp.uint8)
-
-                    for const in constant:
-                        const_array = jnp.array(const['value'])
-                        flat = const_array.flatten().view(jnp.uint8)
-                        input_hbm = input_hbm.at[const['addr']: const['addr'] + flat.size].set(flat)
-
+                    # The module lays the inputs into HBM
                     assert len(args) == len(input), "args != input"
+                    operands = []
                     for arg, spec in zip(args, input):
                         assert arg.shape == spec['shape'], "arg.shape != input.shape"
                         assert arg.dtype == spec['dtype'], "arg.dtype != input.dtype"
-                        arg_array = jnp.array(arg)
-                        flat = arg_array.flatten().view(jnp.uint8)
-                        input_hbm = input_hbm.at[spec['addr']: spec['addr'] + flat.size].set(flat)
-
-                    arg = jax.device_put(input_hbm, device=backend.devices()[0])
+                        operands.append(jax.device_put(arg, device=backend.devices()[0]))
 
                     start = time.time()
-                    result = api.executable.execute([arg])
-                    jax.block_until_ready(result)
+                    outputs = api.executable.execute(operands)
+                    jax.block_until_ready(outputs)
                     elapsed = round((time.time() - start) * 1000, 3)
-
-                    output_hbm = result[0]
-                    outputs = []
-
-                    for out in output:
-                        addr, shape, dtype = out['addr'], out['shape'], out['dtype']
-                        size = int(jnp.prod(jnp.array(shape)) * jnp.dtype(dtype).itemsize)
-                        data = jnp.array(output_hbm[addr:addr + size]).view(dtype).reshape(shape)
-                        outputs.append(jnp.array(data))
 
                     return outputs, elapsed
 
@@ -105,7 +86,7 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
                 func()
-                module = api.generate_module(hbm)
+                module = api.generate_module(hbm, input, constant, output)
                 api.compile_time = compile_module(module)
 
             return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
