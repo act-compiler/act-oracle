@@ -16,6 +16,8 @@ backend = None
 
 def set_simulation_backend(platform="CPU"):
     global backend
+    if platform not in ("CPU", "GPU"):
+        raise ValueError(f"unknown simulation platform {platform!r}")
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_default_matmul_precision", "highest")
     if platform == "CPU":
