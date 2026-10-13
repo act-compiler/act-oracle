@@ -6,12 +6,13 @@ cd "$(dirname "$0")"
 source act.env
 
 usage() {
-  echo "Usage: $0 [-h|--help]"
+  echo "Usage: $0 [--cpu|--cuda13] [-h|--help]"
 }
 
-# Any argument but --help is refused
+# Any argument but --cpu, --cuda13 and --help is refused
 for arg in "$@"; do
   case "$arg" in
+    --cpu | --cuda13) ;;
     -h | --help)
       usage
       exit 0
@@ -30,6 +31,13 @@ if nvidia-smi >/dev/null 2>&1 &&
   docker info -f '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then
   VARIANT="-cuda13"
 fi
+# --cpu or --cuda13 overrides the host's default
+for arg in "$@"; do
+  case "$arg" in
+    --cpu) VARIANT="" ;;
+    --cuda13) VARIANT="-cuda13" ;;
+  esac
+done
 
 # Detect architecture
 ARCH=$(uname -m)
