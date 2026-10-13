@@ -38,22 +38,30 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
         shutil.rmtree(oracle_gen_dir)
     shutil.copytree(generic_dir, oracle_gen_dir)
 
-    print(f"Copied generic oracle structure to {oracle_gen_dir}")
+    print(f'Copied generic oracle structure to {oracle_gen_dir}')
 
     # Generate API file
-    generate_api_file(oracle_gen_dir, accelerator.instructions,
-                      accelerator.constants, accelerator.state, accelerator.data_model)
+    generate_api_file(
+        oracle_gen_dir,
+        accelerator.instructions,
+        accelerator.constants,
+        accelerator.state,
+        accelerator.data_model,
+    )
 
-    print(f"Generated api.py")
+    print(f'Generated api.py')
 
-    print(f"Oracle API generation complete for {accelerator.name}")
+    print(f'Oracle API generation complete for {accelerator.name}')
 
     # Build the debug handler into the oracle, afresh at every generation
-    print(f"Building oracle for {accelerator.name}")
+    print(f'Building oracle for {accelerator.name}')
     xla_debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xla-debug')
     build_dir = os.path.join(oracle_gen_dir, 'build')
-    subprocess.run(["cmake", "-S", xla_debug_dir, "-B", build_dir,
-                    f"-DPython_EXECUTABLE={sys.executable}"], check=True, stdout=subprocess.DEVNULL)
-    subprocess.run(["cmake", "--build", build_dir], check=True, stdout=subprocess.DEVNULL)
-    print(f"Oracle build complete for {accelerator.name}")
-    print(f"The oracle API is located at {oracle_gen_dir}/")
+    subprocess.run(
+        ['cmake', '-S', xla_debug_dir, '-B', build_dir, f'-DPython_EXECUTABLE={sys.executable}'],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(['cmake', '--build', build_dir], check=True, stdout=subprocess.DEVNULL)
+    print(f'Oracle build complete for {accelerator.name}')
+    print(f'The oracle API is located at {oracle_gen_dir}/')

@@ -63,58 +63,66 @@ class OracleVisitor(IDLV2Visitor):
                     attributes[attr_name] = attr_value
 
         if op_name not in self.op_to_template:
-            raise NotImplementedError(f"{self.entry_name}: operation '{op_name}' is not supported by the oracle")
+            raise NotImplementedError(
+                f"{self.entry_name}: operation '{op_name}' is not supported by the oracle"
+            )
         template_name = self.op_to_template[op_name]
-        self.generate_from_template(template_name, lhs_name, lhs_type, lhs_shape,
-                                    operand_names, attributes)
+        self.generate_from_template(
+            template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
+        )
 
         self.instruction_lines.append(f"lvars['{lhs_name}'] = lhs_loc")
 
         return (lhs_name, lhs_type, lhs_shape)
 
-    def generate_from_template(self, template_name, lhs_name, lhs_type, lhs_shape,
-                               operand_names, attributes):
-        mapping = {
-            "lhs": f'"{lhs_name}"',
-            "type": f'"{lhs_type}"',
-            "size": f'[{lhs_shape}]'
-        }
+    def generate_from_template(
+        self, template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
+    ):
+        mapping = {'lhs': f'"{lhs_name}"', 'type': f'"{lhs_type}"', 'size': f'[{lhs_shape}]'}
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
             if len(operand_names) > 0:
-                mapping["in"] = f'"{operand_names[0]}"'
+                mapping['in'] = f'"{operand_names[0]}"'
 
-        elif template_name in ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'MAXIMUM', 'MINIMUM', 'XOR']:
+        elif template_name in [
+            'ADD',
+            'SUBTRACT',
+            'MULTIPLY',
+            'DIVIDE',
+            'MAXIMUM',
+            'MINIMUM',
+            'XOR',
+        ]:
             if len(operand_names) >= 2:
-                mapping["A"] = f'"{operand_names[0]}"'
-                mapping["B"] = f'"{operand_names[1]}"'
+                mapping['A'] = f'"{operand_names[0]}"'
+                mapping['B'] = f'"{operand_names[1]}"'
 
         elif template_name == 'BROADCAST':
             if len(operand_names) > 0:
-                mapping["A"] = f'"{operand_names[0]}"'
+                mapping['A'] = f'"{operand_names[0]}"'
             # broadcast maps operand dims by position; keep the spec's order
             if 'dimensions' not in attributes:
                 raise ValueError(f"{self.entry_name}: broadcast '%{lhs_name}' has no dimensions")
             dims = attributes['dimensions']
             if isinstance(dims, list):
-                mapping["dims"] = ", ".join(str(d) for d in dims)
+                mapping['dims'] = ', '.join(str(d) for d in dims)
             else:
-                mapping["dims"] = str(dims)
+                mapping['dims'] = str(dims)
 
         elif template_name == 'TRANSPOSE':
             if len(operand_names) > 0:
-                mapping["in"] = f'"{operand_names[0]}"'
+                mapping['in'] = f'"{operand_names[0]}"'
             if 'dimensions' in attributes:
                 dims = attributes['dimensions']
                 if isinstance(dims, list):
-                    mapping["dims"] = ", ".join(str(d) for d in dims)
+                    mapping['dims'] = ', '.join(str(d) for d in dims)
                 else:
-                    mapping["dims"] = str(dims)
+                    mapping['dims'] = str(dims)
 
         elif template_name == 'DOT':
             if len(operand_names) >= 2:
-                mapping["A"] = f'"{operand_names[0]}"'
-                mapping["B"] = f'"{operand_names[1]}"'
+                mapping['A'] = f'"{operand_names[0]}"'
+                mapping['B'] = f'"{operand_names[1]}"'
 
             # dot pairs dimension lists by position; keep the spec's order
             def format_dims(value):
@@ -123,23 +131,23 @@ class OracleVisitor(IDLV2Visitor):
                 elif isinstance(value, str):
                     return value
 
-            mapping["lb"] = format_dims(attributes.get('lhs_batch_dims', []))
-            mapping["lc"] = format_dims(attributes.get('lhs_contracting_dims', [1]))
-            mapping["rb"] = format_dims(attributes.get('rhs_batch_dims', []))
-            mapping["rc"] = format_dims(attributes.get('rhs_contracting_dims', [0]))
+            mapping['lb'] = format_dims(attributes.get('lhs_batch_dims', []))
+            mapping['lc'] = format_dims(attributes.get('lhs_contracting_dims', [1]))
+            mapping['rb'] = format_dims(attributes.get('rhs_batch_dims', []))
+            mapping['rc'] = format_dims(attributes.get('rhs_contracting_dims', [0]))
 
         elif template_name == 'REDUCE_ADD':
-            assert(len(operand_names) == 1)
-            mapping["A"] = f'"{operand_names[0]}"'
+            assert len(operand_names) == 1
+            mapping['A'] = f'"{operand_names[0]}"'
             if 'dimensions' in attributes:
                 dims = attributes['dimensions']
                 if isinstance(dims, list):
-                    mapping["dims"] = '{' + ', '.join(str(d) for d in dims) + '}'
+                    mapping['dims'] = '{' + ', '.join(str(d) for d in dims) + '}'
                 else:
-                    mapping["dims"] = '{' + str(dims) + '}'
+                    mapping['dims'] = '{' + str(dims) + '}'
             else:
-                mapping["dims"] = '{}'
-            template_name = "REDUCE"
+                mapping['dims'] = '{}'
+            template_name = 'REDUCE'
 
         template_code = generate_code(templates[template_name], mapping)
 
@@ -176,7 +184,7 @@ class OracleVisitor(IDLV2Visitor):
 
             return (value_text, value_type)
         else:
-            return ("", "UNKNOWN")
+            return ('', 'UNKNOWN')
 
     def visitBraceList(self, ctx: IDLV2Parser.BraceListContext):
         if ctx.value():
@@ -203,7 +211,7 @@ class OracleVisitor(IDLV2Visitor):
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
         dims = ctx.getText()
-        dims = dims.replace("`", "'")
+        dims = dims.replace('`', "'")
         typ = ctx.parentCtx.TYPE().getText()
         return (dims, typ)
 
