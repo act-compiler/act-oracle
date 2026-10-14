@@ -60,9 +60,6 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 raise ValueError(f'unknown oracle mode {mode!r}')
 
             def wrapper(f, *args, **kwargs):
-                if mode != 'fsim':
-                    f()
-
                 if mode == 'fsim-compile':
                     return input, api.compile_time
 

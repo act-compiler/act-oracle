@@ -53,6 +53,19 @@ def test_unknown_platform_refused(platform):
     assert decorator.backend.platform == PLATFORM.lower()
 
 
+def test_compile_runs_the_body_once():
+    calls = []
+
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        calls.append(1)
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    k('fsim-compile')()
+    assert len(calls) == 1
+
+
 def test_debug_prints_values(capfd):
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():
