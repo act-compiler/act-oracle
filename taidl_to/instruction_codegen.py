@@ -4,7 +4,7 @@ from taidl import Instruction
 
 from .expression_writer import python
 from .semantic_generator import generate_semantic_code
-from .template import dict_text, generate_code, indent_code, init_templates, layout, templates
+from .template import dict_text, generate_code, indent_code, layout, templates
 
 # Module state an API function reads or sets
 SHARED_NAMES = {
@@ -19,7 +19,6 @@ SHARED_NAMES = {
 
 def generate_inputs(instruction: Instruction) -> str:
     """Generate input loading code from instruction's instr_input_asts"""
-    init_templates()
     output = ''
 
     for counter, (buffer_name, starts, sizes) in enumerate(instruction.instr_input_asts):
@@ -43,7 +42,6 @@ def generate_inputs(instruction: Instruction) -> str:
 
 def generate_outputs(instruction: Instruction) -> str:
     """Generate output storing code from instruction's instr_output_asts"""
-    init_templates()
     code_output = ''
 
     for counter, (buffer_name, starts, _) in enumerate(instruction.instr_output_asts):
@@ -63,8 +61,6 @@ def generate_outputs(instruction: Instruction) -> str:
 
 def generate_api_function(instruction: Instruction) -> str:
     """Generate the API function for an instruction"""
-    init_templates()
-
     attr_list = ', '.join(instruction.comp_attr + instruction.parameters)
     func_name = instruction.instruction
 

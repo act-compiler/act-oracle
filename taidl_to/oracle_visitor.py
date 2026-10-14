@@ -4,7 +4,7 @@ from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE
-from .template import generate_code, init_templates, templates
+from .template import generate_code, templates
 
 
 class OracleVisitor(IDLV2Visitor):
@@ -15,7 +15,6 @@ class OracleVisitor(IDLV2Visitor):
         # Each backtick expression's tree, by its node
         self.expressions = expressions
         self.instruction_lines = []
-        init_templates()
 
         self.op_to_template = {
             'reshape': 'RESHAPE',
