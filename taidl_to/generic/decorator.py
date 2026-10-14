@@ -59,7 +59,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
             if mode not in ('fsim', 'fsim-compile'):
                 raise ValueError(f'unknown oracle mode {mode!r}')
 
-            def wrapper(f, *args, **kwargs):
+            def wrapper(*args):
                 if mode == 'fsim-compile':
                     return input, api.compile_time
 
@@ -90,7 +90,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 module = api.generate_module(hbm, input, constant, output)
                 executable, device, api.compile_time = compile_module(module)
 
-            return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
+            return wrapper
 
         return launchable
 
