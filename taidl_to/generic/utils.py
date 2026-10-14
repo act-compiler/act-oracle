@@ -115,7 +115,7 @@ def parameter_util(global_counters, lhs_name):
     return lhs_name
 
 
-# Each sh_* helper records its result's MLIR type in ssa_types
+# TAIDL element type -> MLIR element type
 MLIR_ELEM_TYPE = {
     'f64': 'f64',
     'f32': 'f32',
@@ -160,6 +160,7 @@ def dims_list(dims):
     return '[' + ', '.join(d.strip() for d in dims.strip('{} ').split(',') if d.strip()) + ']'
 
 
+# Each sh_* helper records its result's MLIR type in ssa_types
 def sh_zeros(lhs, xla_type, ssa_types):
     t = mlir_type(xla_type)
     ssa_types[lhs] = t
@@ -270,7 +271,7 @@ def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types):
     return lines
 
 
-# Kernel inputs in, outputs out; HBM stays inside the module
+# NumPy dtype name -> TAIDL element type
 XLA_ELEM_TYPE = {
     'bfloat16': 'bf16',
     'float16': 'f16',
@@ -298,6 +299,7 @@ def spec_bytes(spec):
     return width * int(np.prod(dims, dtype=np.int64)), dims + ([width] if width > 1 else [])
 
 
+# Kernel inputs in, outputs out; HBM stays inside the module
 def kernel_prologue(hbm_size, inputs, constants):
     """The module's parameters, and the lines laying them and the constants into %d0.0"""
     params, lines, pieces = [], [], []
