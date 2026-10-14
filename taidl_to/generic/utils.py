@@ -1,3 +1,5 @@
+"""What a generated api.py traces with: loop expressions, SSA names, types, emitters"""
+
 import re
 
 import numpy as np

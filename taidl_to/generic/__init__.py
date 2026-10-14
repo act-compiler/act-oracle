@@ -1,1 +1,1 @@
-# Auto-generated TAIDL-TO Kernel Programming Library and Test Oracle package
+# The package of a generated oracle

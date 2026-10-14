@@ -1,8 +1,4 @@
-"""Oracle code generator for TAIDL-TO
-
-This module provides the main interface for generating oracle/API code.
-It coordinates template-based generation of Python API files for accelerators.
-"""
+"""generate_oracle, which writes an accelerator's oracle"""
 
 import os
 import shutil
@@ -19,14 +15,10 @@ from .template import write_file
 
 
 def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
-    """
-    Generate Oracle API code for an accelerator.
+    """Write the accelerator's oracle to <base_dir>/targets/<name>/oracle.
 
-    The previous oracle is removed first, so a refused or failed generation leaves none.
-
-    Args:
-        accelerator: TAIDL Accelerator object
-        base_dir: Base directory of the project. Defaults to accelerator.base_dir.
+    base_dir is accelerator.base_dir unless given; the previous oracle
+    is removed first, so a refused or failed generation leaves none.
     """
     if base_dir is None:
         base_dir = accelerator.base_dir
