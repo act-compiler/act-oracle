@@ -85,7 +85,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(PrintHandler, PrintImpl,
                                   .Ret<ffi::Buffer<ffi::DataType::S32>>());
 
 #ifdef WITH_CUDA
-// Copy both buffers to host on the call's stream, then print
+// Both buffers to host on the call's stream, then print
 auto PrintCudaImpl(cudaStream_t stream, ffi::Buffer<ffi::DataType::U8> prefix,
                    ffi::Buffer<ffi::DataType::F64> buf,
                    ffi::Result<ffi::Buffer<ffi::DataType::S32>> out) {

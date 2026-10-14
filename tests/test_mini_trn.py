@@ -103,6 +103,6 @@ def test_softmax():
 
     A = load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', 'Q.dat'), (64, 64))
     outputs, _ = k('fsim')(A)
-    # A times I is A; each later step rounds to bf16
+    # A @ I is A; later steps round to bf16
     E = bf16(np.exp(np.asarray(A, np.float64)))
     assert_near(outputs[0], bf16(E / bf16(E.sum(axis=1, keepdims=True))))

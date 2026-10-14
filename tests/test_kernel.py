@@ -93,7 +93,7 @@ def test_generation_rebuilds_the_debug_handler():
 
 
 def test_debug_before_any_instruction(capfd):
-    # This oracle imported afresh, so debug is the first call it traces
+    # A fresh import, so debug is its first traced call
     decorator, fresh = import_oracle(os.path.dirname(os.path.dirname(api.__file__)), 'oracle_fresh')
 
     @decorator.kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
@@ -205,7 +205,7 @@ def nested():
 
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():
-        # Each half of Q in two inner loops of eight rows
+        # Q's halves in two inner loops of eight rows
         api.start_loop('io', 0, 2)
         api.start_loop('ii', 0, 2)
         api.load_rm(n=8, addr_in='4096 * %io + 1024 * %ii', addr_out='32 * %io + 8 * %ii')
@@ -240,7 +240,7 @@ def test_loop_matches_unrolled(twin):
     k('fsim-compile')()
     outputs, _ = k('fsim')(*load_qkv())
     if PLATFORM == 'GPU':
-        # No bit equality on the GPU: the twin is held to the reference
+        # On the GPU, the twin is held to the reference
         reference, tol = attention_reference(os.path.join(MINI_TRN_DIR, 'data'))
         assert np.max(np.abs(np.asarray(outputs[0], np.float64) - reference)) <= tol
         return

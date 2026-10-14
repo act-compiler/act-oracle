@@ -25,7 +25,7 @@ nanobind_add_module(
     print_handler_main.cc
 )
 
-# Find CUDA, if any, in the nvidia wheel jax loads it from
+# CUDA, if any, from the nvidia wheel jax loads
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -c "import nvidia.cu13; print(nvidia.cu13.__path__[0])"
   OUTPUT_VARIABLE CUDA_DIR
