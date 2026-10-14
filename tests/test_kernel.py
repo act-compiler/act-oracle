@@ -188,6 +188,18 @@ def looped():
     return k
 
 
+def test_unknown_loop_expression_token_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', 0, 2)
+        api.load_rm(n=8, addr_in='(%i + 1) * 1024', addr_out='8 * %i')
+        api.end_loop()
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(ValueError, match="unknown token '\\(%i' in a loop expression"):
+        k('fsim-compile')
+
+
 def nested():
     """The attention kernel with its Q and V loads in two-deep loops"""
 
