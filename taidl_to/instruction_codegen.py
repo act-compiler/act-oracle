@@ -81,15 +81,6 @@ def generate_api_function(instruction: Instruction) -> str:
         set_comp_attr += f"'{attr}': {attr},\n"
     set_comp_attr = dict_text(set_comp_attr)
 
-    constraints = ''
-    for idx, line in enumerate(instruction.constraints):
-        constraints += f'# f{idx} = (' + line + ')\n'
-    for idx, line in enumerate(instruction.constraints):
-        if idx == 0:
-            constraints += f'\n# flag = f{idx}'
-        else:
-            constraints += f' and f{idx}'
-
     update = ''
     for line in instruction.update:
         update += '\n' + line
@@ -111,7 +102,6 @@ def generate_api_function(instruction: Instruction) -> str:
         templates['API_FUNC'],
         {
             'update': update,
-            'constraints': constraints,
             'fsim_compile': fsim_compile,
             'set_attributes': set_attributes,
             'set_comp_attr': set_comp_attr,
