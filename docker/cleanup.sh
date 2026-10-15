@@ -5,6 +5,25 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source act.env
 
+usage() {
+  echo "Usage: $0 [-h|--help]"
+}
+
+# Any argument but --help is refused
+for arg in "$@"; do
+  case "$arg" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
 # Pick the cuda13 image on a GPU host
 VARIANT=""
 if nvidia-smi >/dev/null 2>&1 &&
