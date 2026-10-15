@@ -4,6 +4,7 @@ import glob
 import os
 import sys
 import time
+import types
 
 import jax.numpy as jnp
 import numpy as np
@@ -304,3 +305,26 @@ def test_kernel_keeps_its_executable():
     for k, expected in ((copy_q, Q), (copy_k, K)):
         outputs, _ = k('fsim')(Q, K, V)
         assert np.asarray(outputs[0]).tobytes() == np.asarray(expected).tobytes()
+
+
+def test_kernel_keeps_its_compile_time(monkeypatch):
+    decorator = sys.modules[kernel.__module__]
+    # Each compile reads the clock twice
+    clock = iter([0.0, 0.002, 1.0, 1.5])
+    monkeypatch.setattr(decorator, 'time', types.SimpleNamespace(time=lambda: next(clock)))
+
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def first():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def second():
+        api.load_rm(n=64, addr_in=8192, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    compiled_first = first('fsim-compile')
+    compiled_second = second('fsim-compile')
+    # Each reports its own time, not the last one compiled
+    assert compiled_first() == (INPUT, 2.0)
+    assert compiled_second() == (INPUT, 500.0)

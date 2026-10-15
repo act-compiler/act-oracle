@@ -564,7 +564,6 @@ RESERVED = [(kind, name) for kind in ('attribute', 'addressing') for name in SHA
     ('instruction', 'debug'),
     ('instruction', 'state'),
     ('instruction', 'str'),
-    ('instruction', 'compile_time'),
     ('instruction', '__debug__'),
     ('attribute', 'str'),
     ('attribute', '__debug__'),

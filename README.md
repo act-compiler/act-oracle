@@ -35,7 +35,7 @@ generate_oracle(acc)  # acc: a TAIDL Accelerator
 
 `generate_oracle(acc)` writes the oracle of the accelerator `acc` into `targets/<name>/oracle/` under the accelerator's `base_dir`, by default the directory of the file that creates the accelerator.
 The oracle is a Python package: `api.py` holds one function per instruction, named after it, `decorator.py` holds `kernel`, which declares a kernel's HBM size and its inputs, constants and outputs, and `build/` holds the debug handler.
-A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` traces its instruction calls into one StableHLO module and compiles it with XLA through jax, and `k('fsim')(*inputs)` runs the compiled module on the inputs and returns its outputs and the run's time in milliseconds.
+A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` traces its instruction calls into one StableHLO module, compiles it with XLA through jax and returns the kernel's declared inputs and its own compile time in milliseconds, and `k('fsim')(*inputs)` runs the compiled module on the inputs and returns its outputs and the run's time in milliseconds.
 A generation that is refused leaves the oracle an earlier generation wrote in place.
 TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
 

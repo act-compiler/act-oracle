@@ -51,17 +51,17 @@ def compile_module(module: str):
 
 def kernel(hbm: int, input: list, output: list, constant=()):
     def decorator(func):
-        # One executable per decorated kernel, on its own device
-        executable, device = None, None
+        # Each decorated kernel's own executable, device and compile time
+        executable, device, compile_time = None, None, None
 
         def launchable(mode):
-            nonlocal executable, device
+            nonlocal executable, device, compile_time
             if mode not in ('fsim', 'fsim-compile'):
                 raise ValueError(f'unknown oracle mode {mode!r}')
 
             def wrapper(*args):
                 if mode == 'fsim-compile':
-                    return input, api.compile_time
+                    return input, compile_time
 
                 # The module lays the inputs into HBM
                 assert len(args) == len(input), 'args != input'
@@ -88,7 +88,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 api.global_counters = counters
                 func()
                 module = api.generate_module(hbm, input, constant, output)
-                executable, device, api.compile_time = compile_module(module)
+                executable, device, compile_time = compile_module(module)
 
             return wrapper
 
