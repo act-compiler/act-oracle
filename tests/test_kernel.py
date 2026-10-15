@@ -1,22 +1,22 @@
 """Test the kernel API of the generated oracle"""
 
+import glob
 import os
 import sys
-import glob
 import time
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
-import jax.numpy as jnp
 from conftest import (
     EXAMPLES_DIR,
     PLATFORM,
+    attention_reference,
     generate_and_import_oracle,
     generate_example,
     import_oracle,
     load_bf16_matrix,
     run_kernel,
-    attention_reference,
 )
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, 'QKV')

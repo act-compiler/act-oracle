@@ -1,15 +1,13 @@
-import time
 import copy
+import time
 from collections import defaultdict
 
 import jax
-from jax.extend.backend import get_backend, get_compile_options
 from jax import ffi
+from jax.extend.backend import get_backend, get_compile_options
 
-
-from .build import print_handler_ext
 from . import api
-
+from .build import print_handler_ext
 
 backend = None
 

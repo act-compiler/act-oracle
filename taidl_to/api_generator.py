@@ -1,7 +1,7 @@
 """API file generator for Oracle"""
 
-from .template import init_templates, templates, generate_code, write_file, indent_code
 from .instruction_codegen import generate_api_function
+from .template import generate_code, indent_code, init_templates, templates, write_file
 
 
 def generate_semantic_init(data_models):

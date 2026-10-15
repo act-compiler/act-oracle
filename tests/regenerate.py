@@ -4,17 +4,16 @@ Usage: python tests/regenerate.py <example_dir>, one example per process; tests/
 runs it for every example in the CI image; each golden comes from the first kernel it lists.
 """
 
-import os
-import sys
-import json
-import platform
 import importlib
+import json
+import os
+import platform
+import sys
 
 import jax
 import jaxlib
 import numpy as np
-
-from conftest import generate_and_import_oracle, run_kernel, attention_reference
+from conftest import attention_reference, generate_and_import_oracle, run_kernel
 
 if __name__ == '__main__':
     example_dir = os.path.abspath(sys.argv[1])

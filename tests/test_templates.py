@@ -3,12 +3,13 @@
 import os
 import tempfile
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
-import jax.numpy as jnp
-from taidl import Accelerator
-from taidl_to import generate_oracle
 from conftest import import_oracle
+from taidl import Accelerator
+
+from taidl_to import generate_oracle
 
 # One instruction per check, reading and writing HBM
 ops = Accelerator('OPS', base_dir=tempfile.mkdtemp())

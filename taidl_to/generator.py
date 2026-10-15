@@ -5,10 +5,10 @@ It coordinates template-based generation of Python API files for accelerators.
 """
 
 import os
-import sys
-from pathlib import Path
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 from taidl import Accelerator
 

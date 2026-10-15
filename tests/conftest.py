@@ -1,19 +1,18 @@
 """Shared test utilities for TAIDL-TO oracle tests"""
 
-import os
-import sys
-import json
-import shutil
-import tempfile
 import importlib
 import importlib.util
 import itertools
+import json
+import os
+import shutil
+import sys
+import tempfile
 
-import numpy as np
-import ml_dtypes
 import jax
 import jax.numpy as jnp
-
+import ml_dtypes
+import numpy as np
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'examples')
 # The platform every oracle simulates on, set by --platform
