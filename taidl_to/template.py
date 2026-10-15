@@ -32,5 +32,5 @@ def write_file(code: str, filename: str):
 
 
 def indent_code(code: str, level=1):
-    indentation = '\t' * level
+    indentation = '    ' * level
     return '\n'.join(indentation + line if line.strip() else line for line in code.split('\n'))

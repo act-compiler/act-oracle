@@ -26,119 +26,119 @@ loop_stack = []
 cur_scope = "main"
 
 def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list):
-	if loop_stack:
-		raise ValueError(f"loop {loop_stack[-1]['var']} has no end_loop")
-	_, prologue = semantic_init(hbm_size)
-	params, marshal = kernel_prologue(hbm_size, inputs, constants)
-	epilogue, results, result_types = kernel_epilogue(f"%d0.{global_counters['d0']['counter']}", outputs, ssa_types)
-	returned = f" {', '.join(results)} : {', '.join(result_types)}" if results else ""
-	module = "module @compiled {\n"
+    if loop_stack:
+        raise ValueError(f"loop {loop_stack[-1]['var']} has no end_loop")
+    _, prologue = semantic_init(hbm_size)
+    params, marshal = kernel_prologue(hbm_size, inputs, constants)
+    epilogue, results, result_types = kernel_epilogue(f"%d0.{global_counters['d0']['counter']}", outputs, ssa_types)
+    returned = f" {', '.join(results)} : {', '.join(result_types)}" if results else ""
+    module = "module @compiled {\n"
 
-	module += f"func.func public @main({', '.join(params)}) -> ({', '.join(result_types)}) "
-	module += "{\n"
-	for line in marshal + prologue:
-		module += "\t" + line + "\n"
-	for line in instruction_scopes["main"] + epilogue:
-		module += "\t" + line + "\n"
-	module += f"\treturn{returned}\n"
-	module+= "}\n}\n"
+    module += f"func.func public @main({', '.join(params)}) -> ({', '.join(result_types)}) "
+    module += "{\n"
+    for line in marshal + prologue:
+        module += "\t" + line + "\n"
+    for line in instruction_scopes["main"] + epilogue:
+        module += "\t" + line + "\n"
+    module += f"\treturn{returned}\n"
+    module+= "}\n}\n"
 
-	return module
+    return module
 
 def start_loop(var_name, start, end):
-	global cur_scope
-	loop = {'var': "%" + var_name, 'id': global_counters['total_loop_counter'], 'start': start, 'end': end,
-			'parent': cur_scope, 'inits': [], 'args': [], 'types': []}
-	global_counters['total_loop_counter'] += 1
-	# The body names each buffer afresh as a block argument
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
-			loop['inits'].append(f"%{name}.{counter['counter']}")
-			counter['counter'] += 1
-			loop['args'].append(f"%{name}.{counter['counter']}")
-			loop['types'].append(mlir_type(counter['type']))
-			ssa_types[loop['args'][-1]] = loop['types'][-1]
-	loop_stack.append(loop)
-	cur_scope = f"loop{loop['id']}"
+    global cur_scope
+    loop = {'var': "%" + var_name, 'id': global_counters['total_loop_counter'], 'start': start, 'end': end,
+            'parent': cur_scope, 'inits': [], 'args': [], 'types': []}
+    global_counters['total_loop_counter'] += 1
+    # The body names each buffer afresh as a block argument
+    for name, counter in global_counters.items():
+        if isinstance(counter, dict):
+            loop['inits'].append(f"%{name}.{counter['counter']}")
+            counter['counter'] += 1
+            loop['args'].append(f"%{name}.{counter['counter']}")
+            loop['types'].append(mlir_type(counter['type']))
+            ssa_types[loop['args'][-1]] = loop['types'][-1]
+    loop_stack.append(loop)
+    cur_scope = f"loop{loop['id']}"
 
 def end_loop():
-	global cur_scope
-	if not loop_stack:
-		raise ValueError("end_loop has no start_loop")
-	loop = loop_stack.pop()
-	body = instruction_scopes.pop(cur_scope, [])
-	cur_scope = loop['parent']
-	n = f"%loop{loop['id']}"
-	yields, results = [], []
-	for name, counter in global_counters.items():
-		if isinstance(counter, dict):
-			yields.append(f"%{name}.{counter['counter']}")
-			counter['counter'] += 1
-			results.append(f"%{name}.{counter['counter']}")
-			ssa_types[results[-1]] = mlir_type(counter['type'])
-	types = ", ".join(["tensor<i64>"] + loop['types'])
-	pairs = ", ".join(f"{arg} = {init}" for arg, init in zip([loop['var']] + loop['args'], [f"{n}.start"] + loop['inits']))
-	lines = [f"{n}.start = stablehlo.constant dense<{loop['start']}> : tensor<i64>",
-			 f"{', '.join([n + '.var'] + results)} = stablehlo.while({pairs}) : {types}",
-			 "cond {",
-			 f"\t{n}.end = stablehlo.constant dense<{loop['end']}> : tensor<i64>",
-			 f"\t{n}.more = stablehlo.compare LT, {loop['var']}, {n}.end : (tensor<i64>, tensor<i64>) -> tensor<i1>",
-			 f"\tstablehlo.return {n}.more : tensor<i1>",
-			 "} do {"]
-	lines += ["\t" + line for item in body for line in item.split("\n") if line.strip()]
-	lines += [f"\t{n}.one = stablehlo.constant dense<1> : tensor<i64>",
-			  f"\t{n}.next = stablehlo.add {loop['var']}, {n}.one : tensor<i64>",
-			  f"\tstablehlo.return {', '.join([n + '.next'] + yields)} : {types}",
-			  "}"]
-	instruction_scopes[cur_scope].append("\n".join(lines))
+    global cur_scope
+    if not loop_stack:
+        raise ValueError("end_loop has no start_loop")
+    loop = loop_stack.pop()
+    body = instruction_scopes.pop(cur_scope, [])
+    cur_scope = loop['parent']
+    n = f"%loop{loop['id']}"
+    yields, results = [], []
+    for name, counter in global_counters.items():
+        if isinstance(counter, dict):
+            yields.append(f"%{name}.{counter['counter']}")
+            counter['counter'] += 1
+            results.append(f"%{name}.{counter['counter']}")
+            ssa_types[results[-1]] = mlir_type(counter['type'])
+    types = ", ".join(["tensor<i64>"] + loop['types'])
+    pairs = ", ".join(f"{arg} = {init}" for arg, init in zip([loop['var']] + loop['args'], [f"{n}.start"] + loop['inits']))
+    lines = [f"{n}.start = stablehlo.constant dense<{loop['start']}> : tensor<i64>",
+             f"{', '.join([n + '.var'] + results)} = stablehlo.while({pairs}) : {types}",
+             "cond {",
+             f"\t{n}.end = stablehlo.constant dense<{loop['end']}> : tensor<i64>",
+             f"\t{n}.more = stablehlo.compare LT, {loop['var']}, {n}.end : (tensor<i64>, tensor<i64>) -> tensor<i1>",
+             f"\tstablehlo.return {n}.more : tensor<i1>",
+             "} do {"]
+    lines += ["\t" + line for item in body for line in item.split("\n") if line.strip()]
+    lines += [f"\t{n}.one = stablehlo.constant dense<1> : tensor<i64>",
+              f"\t{n}.next = stablehlo.add {loop['var']}, {n}.one : tensor<i64>",
+              f"\tstablehlo.return {', '.join([n + '.next'] + yields)} : {types}",
+              "}"]
+    instruction_scopes[cur_scope].append("\n".join(lines))
 
 def debug(prefix: str, data: str) -> None:
-	global instruction_scopes, cur_scope, state, global_counters
-	
-	if mode == 'fsim-compile':
-		output = []
+    global instruction_scopes, cur_scope, state, global_counters
+    
+    if mode == 'fsim-compile':
+        output = []
 
-		# The handler prints the prefix up to a nul
-		prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
-		prefix_len = len(prefix_bytes)
-		prefix_string = "["
-		for i in range(len(prefix_bytes)):
-			if i != 0:
-				prefix_string += ", "
-			prefix_string += f"{prefix_bytes[i]}"
-		prefix_string += "]"
+        # The handler prints the prefix up to a nul
+        prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
+        prefix_len = len(prefix_bytes)
+        prefix_string = "["
+        for i in range(len(prefix_bytes)):
+            if i != 0:
+                prefix_string += ", "
+            prefix_string += f"{prefix_bytes[i]}"
+        prefix_string += "]"
 
-		data_name = data.split("[")[0]
+        data_name = data.split("[")[0]
 
-		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, data_name)
-		data_dims = ast.literal_eval('[' + global_counters[data_name]["type"].split("[")[1].split("]")[0] + ']')
-		debug_dims = ast.literal_eval('[' + data.split("[")[1].split("]")[0] + ']')
-		slice_configs = []
-		for i in range(len(debug_dims)):
-			data_dims[i] = 1
-		for i in range(len(data_dims)):
-			data_dims[i] = str(data_dims[i])
-			if i < len(debug_dims):
-				slice_configs.append(str(debug_dims[i]))
-			else:
-				slice_configs.append('0')
-		
-		data_type = global_counters[data_name]["type"].split("[")[0]
-		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice', data_type, data_dims)
-		line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {}, ssa_types)
-		output.append(line)
+        rhs_loc = parameter_util(global_counters, {}, state, {}, {}, data_name)
+        data_dims = ast.literal_eval('[' + global_counters[data_name]["type"].split("[")[1].split("]")[0] + ']')
+        debug_dims = ast.literal_eval('[' + data.split("[")[1].split("]")[0] + ']')
+        slice_configs = []
+        for i in range(len(debug_dims)):
+            data_dims[i] = 1
+        for i in range(len(data_dims)):
+            data_dims[i] = str(data_dims[i])
+            if i < len(debug_dims):
+                slice_configs.append(str(debug_dims[i]))
+            else:
+                slice_configs.append('0')
+        
+        data_type = global_counters[data_name]["type"].split("[")[0]
+        lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice', data_type, data_dims)
+        line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {}, ssa_types)
+        output.append(line)
 
-		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice')
-		lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
-		line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
-		output.append(line)
+        rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice')
+        lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
+        line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
+        output.append(line)
 
-		rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice_f64')
-		debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
-		output.append(f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>')
-		output.append(f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @{__package__}.print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>')
-		instruction_scopes[cur_scope] += output
-		global_counters['instruction_counter'] += 1
+        rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice_f64')
+        debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
+        output.append(f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>')
+        output.append(f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @{__package__}.print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>')
+        instruction_scopes[cur_scope] += output
+        global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: API_FUNC ###
 global instruction_scopes, cur_scope, comp_attrs, state, global_counters
@@ -155,15 +155,15 @@ assert(flag)
 lvars = {}
 output = []
 for name, arg in attrs.items():
-	if(isinstance(arg, str)):
-		expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
-		output.append(expr_lines)
-		attrs[name] = new_name
-		global_counters['loop_var'] += 1
+    if(isinstance(arg, str)):
+        expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
+        output.append(expr_lines)
+        attrs[name] = new_name
+        global_counters['loop_var'] += 1
 
 for name, arg in comp_attrs.items():
-	if(isinstance(arg, str)):
-		raise ValueError("Loop expressions are not supported for computation attributes")
+    if(isinstance(arg, str)):
+        raise ValueError("Loop expressions are not supported for computation attributes")
 {{fsim_compile}}
 instruction_scopes[cur_scope] += (output)
 global_counters['instruction_counter'] += 1
@@ -181,7 +181,7 @@ rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{rhs
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{rhs_name}})
 start_indices = {{slice}}
 lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, start_indices,
-					attrs, state, lvars, comp_attrs, ssa_types)
+                    attrs, state, lvars, comp_attrs, ssa_types)
 output += lines
 
 ### TEMPLATE: RESHAPE ###
@@ -219,7 +219,7 @@ a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 line = sh_dot(lhs_loc, lhs_type, a_loc, b_loc,
-			  {{lb}}, {{lc}}, {{rb}}, {{rc}}, ssa_types)
+              {{lb}}, {{lc}}, {{rb}}, {{rc}}, ssa_types)
 output.append(line)
 
 ### TEMPLATE: TRANSPOSE ###
@@ -295,27 +295,27 @@ output.append(line)
 
 ### TEMPLATE: SEMANTIC_INIT ###
 def semantic_init(hbm_size):
-	global_counters = {
-		'd0': {
-			'type': f'u8[{hbm_size}]',
-			'counter': 0
-		},
+    global_counters = {
+        'd0': {
+            'type': f'u8[{hbm_size}]',
+            'counter': 0
+        },
 {{custom_counters}}
-		'instruction_counter': 0,
-		'total_loop_counter': 0,
-		'loop_var': 0,
-	}
+        'instruction_counter': 0,
+        'total_loop_counter': 0,
+        'loop_var': 0,
+    }
 
-	prologue = []
-	ssa_types['%d0.0'] = mlir_type(f'u8[{hbm_size}]')
+    prologue = []
+    ssa_types['%d0.0'] = mlir_type(f'u8[{hbm_size}]')
 
 {{custom_prologue}}
-	return global_counters, prologue
+    return global_counters, prologue
 
 ### TEMPLATE: SEMANTIC_COUNTER ###
 '{{var_name}}': {
-	'type': '{{var_type}}{{var_dim}}',
-	'counter': 0
+    'type': '{{var_type}}{{var_dim}}',
+    'counter': 0
 },
 ### TEMPLATE: PROLOGUE_INIT ###
-	prologue.append(sh_zeros('%{{var_name}}.0', '{{var_type}}{{var_dim}}', ssa_types))
+    prologue.append(sh_zeros('%{{var_name}}.0', '{{var_type}}{{var_dim}}', ssa_types))

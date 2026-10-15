@@ -76,12 +76,12 @@ def generate_api_function(instruction: Instruction) -> str:
 
     set_attributes = ''
     for attr in instruction.parameters:
-        set_attributes += f'\t"{attr}": {attr},\n'
+        set_attributes += f'    "{attr}": {attr},\n'
     set_attributes = indent_code(set_attributes)
 
     set_comp_attr = ''
     for attr in instruction.comp_attr:
-        set_comp_attr += f'\t"{attr}": {attr},\n'
+        set_comp_attr += f'    "{attr}": {attr},\n'
     set_comp_attr = indent_code(set_comp_attr)
 
     constraints = ''
