@@ -78,7 +78,11 @@ class OracleVisitor(IDLV2Visitor):
     def generate_from_template(
         self, template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
     ):
-        mapping = {'lhs': f"'{lhs_name}'", 'type': f"'{lhs_type}'", 'size': f'[{lhs_shape}]'}
+        mapping = {
+            'lhs': f"'{lhs_name}'",
+            'type': f"'{lhs_type}'",
+            'size': '[' + ', '.join(lhs_shape.split(',')) + ']',
+        }
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
             if len(operand_names) > 0:
