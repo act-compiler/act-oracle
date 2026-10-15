@@ -1,4 +1,5 @@
 import copy
+import itertools
 import time
 from collections import defaultdict
 
@@ -73,6 +74,22 @@ def check_hbm(name, hbm, input, constant, output):
                     f'{kind} {i} of kernel {name!r}, {nbytes} bytes at byte {addr}, '
                     f'runs outside HBM of {hbm} bytes'
                 )
+
+    # Inputs and constants laid apart; outputs may lie over them
+    laid = sorted(
+        (
+            (addr, nbytes, kind, i)
+            for kind in ('input', 'constant')
+            for i, (addr, nbytes) in enumerate(pieces[kind])
+        ),
+        key=lambda piece: piece[:2],
+    )
+    for (last_addr, last_nbytes, last_kind, j), (addr, nbytes, kind, i) in itertools.pairwise(laid):
+        if addr < last_addr + last_nbytes:
+            raise ValueError(
+                f'{kind} {i} of kernel {name!r}, {nbytes} bytes at byte {addr}, '
+                f'overlaps {last_kind} {j}, {last_nbytes} bytes at byte {last_addr}'
+            )
 
 
 def kernel(hbm: int, input: list, output: list, constant=()):

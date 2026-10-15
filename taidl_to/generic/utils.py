@@ -436,8 +436,6 @@ def kernel_prologue(hbm_size, inputs, constants):
         parts.append((f'%hbm.g{len(parts)}', gap_t))
 
     for addr, nbytes, loc, loc_t in sorted(pieces):
-        if addr < cursor:
-            raise ValueError(f'kernel inputs and constants overlap at HBM byte {addr}')
         if addr > cursor:
             gap(addr - cursor)
         parts.append((loc, loc_t))
