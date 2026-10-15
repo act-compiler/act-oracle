@@ -5,6 +5,16 @@ from taidl import Instruction
 from .semantic_generator import generate_semantic_code
 from .template import dict_text, generate_code, indent_code, init_templates, layout, templates
 
+# Module state an API function reads or sets
+SHARED_NAMES = {
+    'comp_attrs',
+    'cur_scope',
+    'global_counters',
+    'instruction_scopes',
+    'ssa_types',
+    'state',
+}
+
 
 def generate_inputs(instruction: Instruction) -> str:
     """Generate input loading code from instruction's instr_inputs"""
@@ -73,6 +83,13 @@ def generate_api_function(instruction: Instruction) -> str:
 
     attr_list = ', '.join(instruction.comp_attr + instruction.parameters)
     func_name = instruction.instruction
+
+    # Refuse an attribute shadowing one
+    for attr in instruction.comp_attr + instruction.parameters:
+        if attr in SHARED_NAMES:
+            raise NotImplementedError(
+                f"{func_name}: attribute name '{attr}' is reserved by the oracle"
+            )
 
     set_attributes = ''
     for attr in instruction.parameters:
