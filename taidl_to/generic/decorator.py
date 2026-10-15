@@ -63,6 +63,12 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 if mode == 'fsim-compile':
                     return input, compile_time
 
+                # Only a compiled kernel runs
+                if executable is None:
+                    raise ValueError(
+                        f"kernel {func.__name__!r} is not compiled; run it in 'fsim-compile' first"
+                    )
+
                 # The module lays the inputs into HBM
                 assert len(args) == len(input), 'args != input'
                 operands = []
