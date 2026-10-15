@@ -29,3 +29,12 @@ include = ["taidl_to", "taidl_to.*"]
 "taidl_to.templates" = ["*.txt"]
 "taidl_to.generic" = ["*.py"]
 "taidl_to" = ["xla-debug/*"]
+
+[tool.ruff]
+line-length = 100
+# Python files alone, not markdown code blocks
+include = ["*.py"]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "single"

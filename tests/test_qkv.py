@@ -1,17 +1,18 @@
 """Test QKV oracle with all kernels"""
 
 import os
-import pytest
-import numpy as np
+
 import jax.numpy as jnp
+import numpy as np
+import pytest
 from conftest import (
     EXAMPLES_DIR,
     PLATFORM,
-    generate_and_import_oracle,
-    run_kernel,
-    load_golden,
     attention_reference,
     bf16,
+    generate_and_import_oracle,
+    load_golden,
+    run_kernel,
 )
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, 'QKV')
@@ -47,8 +48,10 @@ def assert_near(output, reference):
 
 
 def test_identity():
+    import importlib
+    import sys
+
     from conftest import load_bf16_matrix
-    import sys, importlib
 
     sys.path.insert(0, os.path.join(QKV_DIR, 'assembly'))
     identity_mod = importlib.import_module('identity')
@@ -62,8 +65,10 @@ def test_identity():
 
 
 def test_matmul():
+    import importlib
+    import sys
+
     from conftest import load_bf16_matrix
-    import sys, importlib
 
     sys.path.insert(0, os.path.join(QKV_DIR, 'assembly'))
     matmul_mod = importlib.import_module('matmul')
@@ -78,8 +83,10 @@ def test_matmul():
 
 
 def test_softmax():
+    import importlib
+    import sys
+
     from conftest import load_bf16_matrix
-    import sys, importlib
 
     sys.path.insert(0, os.path.join(QKV_DIR, 'assembly'))
     softmax_mod = importlib.import_module('softmax')

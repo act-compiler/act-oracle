@@ -1,15 +1,13 @@
-import time
 import copy
+import time
 from collections import defaultdict
 
 import jax
-from jax.extend.backend import get_backend, get_compile_options
 from jax import ffi
+from jax.extend.backend import get_backend, get_compile_options
 
-
-from .build import print_handler_ext
 from . import api
-
+from .build import print_handler_ext
 
 backend = None
 
@@ -51,7 +49,7 @@ def compile_module(module: str):
     return executable, device, elapsed
 
 
-def kernel(hbm: int, input: list, output: list, constant=[]):
+def kernel(hbm: int, input: list, output: list, constant=()):
     def decorator(func):
         # One executable per decorated kernel, on its own device
         executable, device = None, None
@@ -85,7 +83,7 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     return outputs, elapsed
 
             api.mode = mode
-            if backend == None:
+            if backend is None:
                 set_simulation_backend()
 
             if mode == 'fsim-compile':

@@ -37,4 +37,5 @@ Setting a platform, which the first kernel launch does with the CPU if nothing h
 ```
 
 `tests/pytest.sh` runs the tests in `devanshdvj/act-env:py3.14-jax0.11.2`, the image `docker/act.env` names, in its tag for the host's architecture, amd64 or arm64, and in its CUDA 13 tag where `nvidia-smi` succeeds and docker lists the nvidia runtime; the CI pulls its amd64 tag.
+Ahead of the tests, the CI checks the formatting and lint against `pyproject.toml`, `.editorconfig` and `.clang-format` with `./docker/exec.sh "ruff format --check && ruff check && shfmt -d . && clang-format --dry-run -Werror $(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp' | tr '\n' ' ')"`.
 On the CPU an attention kernel equals its golden bit for bit; on a GPU the goldens are skipped, and an attention kernel is held to its NumPy reference within four bf16 ulps of the largest magnitude in V, twice the largest deviation measured on an NVIDIA H100 NVL.

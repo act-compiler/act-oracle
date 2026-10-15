@@ -114,20 +114,19 @@ def compute(exp_: str) -> int | float:
     import ast
 
     try:
-        if f'%loop_final' in exp_:
+        if '%loop_final' in exp_:
             return exp_
         output = eval(compile(ast.parse(exp_, mode='eval'), '', 'eval'))
         if type(output) is float:
             output = int(output)
-    except Exception:
+    except Exception as error:
         print('Expression: ')
         print(exp_)
-        output = 'Failed'
-        assert 0
+        raise AssertionError from error
     return output
 
 
-def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype='', lhs_dim=[]):
+def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype='', lhs_dim=()):
     if lhs_name in global_counters:
         global_counters[lhs_name]['counter'] += 1
         lhs_type = global_counters[lhs_name]['type']
@@ -150,7 +149,7 @@ def parameter_util(global_counters, attrs, state, lvars, consts, lhs_name):
 
 
 def simplify_vals(vals, attrs, state, lvars, consts):
-    simplify = lambda x: str((compute(substitute(x, attrs, state, lvars, consts))))
+    simplify = lambda x: str(compute(substitute(x, attrs, state, lvars, consts)))
     vals = list(map(simplify, vals))
     return vals
 
@@ -266,8 +265,10 @@ def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
     scalar_t = f'tensor<{mlir_elem(t)}>'
     lines = [
         f'{lhs}.init = stablehlo.constant dense<{mlir_zero(scalar_t)}> : {scalar_t}',
-        f'{lhs} = stablehlo.reduce({x} init: {lhs}.init) applies stablehlo.{op} '
-        f'across dimensions = {dims_list(dims)} : ({ssa_types[x]}, {scalar_t}) -> {t}',
+        (
+            f'{lhs} = stablehlo.reduce({x} init: {lhs}.init) applies stablehlo.{op} '
+            f'across dimensions = {dims_list(dims)} : ({ssa_types[x]}, {scalar_t}) -> {t}'
+        ),
     ]
     ssa_types[lhs] = t
     return '\n\t'.join(lines)

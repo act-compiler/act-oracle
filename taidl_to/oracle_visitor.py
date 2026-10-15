@@ -2,7 +2,7 @@
 
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
-from .template import generate_code, templates, init_templates
+from .template import generate_code, init_templates, templates
 
 
 class OracleVisitor(IDLV2Visitor):

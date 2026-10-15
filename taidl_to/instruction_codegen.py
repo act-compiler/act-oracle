@@ -2,8 +2,8 @@
 
 from taidl import Instruction
 
-from .template import init_templates, templates, generate_code, indent_code
 from .semantic_generator import generate_semantic_code
+from .template import generate_code, indent_code, init_templates, templates
 
 
 def generate_inputs(instruction: Instruction) -> str:

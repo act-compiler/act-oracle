@@ -1,16 +1,17 @@
 """Test QKV_new oracle with all 4 attention kernel variants"""
 
 import os
-import pytest
-import numpy as np
+
 import jax.numpy as jnp
+import numpy as np
+import pytest
 from conftest import (
     EXAMPLES_DIR,
     PLATFORM,
-    generate_and_import_oracle,
-    run_kernel,
-    load_golden,
     attention_reference,
+    generate_and_import_oracle,
+    load_golden,
+    run_kernel,
 )
 
 QKV_DIR = os.path.join(EXAMPLES_DIR, 'QKV_new')

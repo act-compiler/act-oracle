@@ -5,17 +5,17 @@ It coordinates template-based generation of Python API files for accelerators.
 """
 
 import os
-import sys
-from pathlib import Path
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 from taidl import Accelerator
 
 from .api_generator import generate_api_file
 
 
-def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
+def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
     """
     Generate Oracle API code for an accelerator.
 
@@ -49,7 +49,7 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
         accelerator.data_model,
     )
 
-    print(f'Generated api.py')
+    print('Generated api.py')
 
     print(f'Oracle API generation complete for {accelerator.name}')
 

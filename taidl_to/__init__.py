@@ -3,3 +3,5 @@
 __version__ = '2.5'
 
 from .generator import generate_oracle
+
+__all__ = ['generate_oracle']
