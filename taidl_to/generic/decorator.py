@@ -49,7 +49,7 @@ def compile_module(module: str):
     return executable, device, elapsed
 
 
-def kernel(hbm: int, input: list, output: list, constant=[]):
+def kernel(hbm: int, input: list, output: list, constant=()):
     def decorator(func):
         # One executable per decorated kernel, on its own device
         executable, device = None, None

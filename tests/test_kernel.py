@@ -115,20 +115,25 @@ def test_unstarted_loop_refused():
         k('fsim-compile')()
 
 
+def run_printing(kern, a, prefix, inputs):
+    """Compile and run on inputs a kernel of oracle a that prints after prefix"""
+
+    @kern(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        a.load_rm(n=64, addr_in=0, addr_out=0)
+        a.debug(prefix=prefix, data='d1[0]')
+        a.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    k('fsim-compile')()
+    k('fsim')(*inputs)
+
+
 def test_two_oracles_print(capfd):
     other_decorator, other_api = import_oracle(generate_example(QKV_DIR), 'oracle_other')
     # Each oracle registers its own debug handler
-    Q, K, V = load_qkv()
+    inputs = load_qkv()
     for kern, a, prefix in ((kernel, api, 'first'), (other_decorator.kernel, other_api, 'second')):
-
-        @kern(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
-        def k():
-            a.load_rm(n=64, addr_in=0, addr_out=0)
-            a.debug(prefix=prefix, data='d1[0]')
-            a.store_rm(n=64, addr_in=0, addr_out=24576)
-
-        k('fsim-compile')()
-        k('fsim')(Q, K, V)
+        run_printing(kern, a, prefix, inputs)
     lines = capfd.readouterr().out.splitlines()
     assert 'first: ' in lines and 'second: ' in lines
 

@@ -127,7 +127,7 @@ def compute(exp_: str) -> int | float:
     return output
 
 
-def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype='', lhs_dim=[]):
+def lhs_util(attrs, state, global_counters, lvars, consts, lhs_name, lhs_vartype='', lhs_dim=()):
     if lhs_name in global_counters:
         global_counters[lhs_name]['counter'] += 1
         lhs_type = global_counters[lhs_name]['type']
