@@ -345,3 +345,70 @@ def test_run_before_compile_refused():
     copy_q('fsim-compile')()
     outputs, _ = copy_q('fsim')(Q, K, V)
     assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
+
+
+# Q, K and V as plain NumPy arrays
+QKV = [np.full((64, 64), v, jnp.bfloat16) for v in (1, 2, 3)]
+
+
+@pytest.mark.parametrize(
+    'args, error, message',
+    [
+        (QKV[:2], ValueError, "kernel 'copy_q' declares 3 inputs, got 2 arguments"),
+        (QKV + QKV[:1], ValueError, "kernel 'copy_q' declares 3 inputs, got 4 arguments"),
+        (
+            [QKV[0].tolist(), *QKV[1:]],
+            TypeError,
+            "argument 0 of kernel 'copy_q' is a list, not an array",
+        ),
+        (
+            [QKV[0], QKV[1][:, :32], QKV[2]],
+            ValueError,
+            "argument 1 of kernel 'copy_q' has shape (64, 32), declared (64, 64)",
+        ),
+        (
+            [*QKV[:2], QKV[2].astype(np.float32)],
+            ValueError,
+            "argument 2 of kernel 'copy_q' has dtype float32, declared bfloat16",
+        ),
+    ],
+    ids=['two', 'four', 'list', 'shape', 'dtype'],
+)
+def test_unlike_arguments_refused(args, error, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    copy_q('fsim-compile')()
+    with pytest.raises(error) as refusal:
+        copy_q('fsim')(*args)
+    assert str(refusal.value) == message
+    # Arguments like the declared inputs run
+    outputs, _ = copy_q('fsim')(*QKV)
+    assert np.asarray(outputs[0]).tobytes() == QKV[0].tobytes()
+
+
+def test_list_shape_runs():
+    # A shape declared as a list
+    listed = [{**spec, 'shape': list(spec['shape'])} for spec in INPUT]
+
+    @kernel(hbm=32768, input=listed, constant=[], output=OUTPUT)
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    copy_q('fsim-compile')()
+    outputs, _ = copy_q('fsim')(*QKV)
+    assert np.asarray(outputs[0]).tobytes() == QKV[0].tobytes()
+
+
+def test_compile_arguments_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(ValueError) as refusal:
+        copy_q('fsim-compile')(QKV[0], 3)
+    assert str(refusal.value) == "kernel 'copy_q' takes no arguments in 'fsim-compile'"
