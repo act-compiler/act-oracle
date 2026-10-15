@@ -83,7 +83,7 @@ def kernel(hbm: int, input: list, output: list, constant=[]):
                     return outputs, elapsed
 
             api.mode = mode
-            if backend == None:
+            if backend is None:
                 set_simulation_backend()
 
             if mode == 'fsim-compile':
