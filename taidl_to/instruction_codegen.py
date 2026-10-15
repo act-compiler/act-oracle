@@ -98,6 +98,7 @@ def generate_api_function(instruction: Instruction) -> str:
     output = generate_code(
         templates['API_FUNC'],
         {
+            'name': f"'{func_name}'",
             'fsim_compile': fsim_compile,
             'set_attributes': set_attributes,
             'set_comp_attr': set_comp_attr,
