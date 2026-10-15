@@ -80,6 +80,8 @@ On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` 
 
 An oracle simulates on the CPU unless the generated oracle's `decorator.set_simulation_backend('GPU')` moves it to an NVIDIA GPU; any other platform name raises `ValueError`.
 Setting a platform, which the first kernel launch does with the CPU if nothing has, also turns on jax's `jax_enable_x64` and sets `jax_default_matmul_precision` to `highest` for the whole process.
+Setting the CPU also sets jax's `jax_platforms` to `cpu` unless the caller has set it.
+If no jax backend has started before, jax then starts only its CPU platform and never initialises CUDA on a GPU host, and setting the GPU afterwards raises `ValueError`.
 Every dot an oracle emits carries the precision `HIGHEST`, so a GPU computes an `f32` dot at `f32`, as the CPU does.
 
 ## Testing

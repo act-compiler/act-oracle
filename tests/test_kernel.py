@@ -2,6 +2,7 @@
 
 import glob
 import os
+import subprocess
 import sys
 import time
 import types
@@ -52,6 +53,57 @@ def test_unknown_platform_refused(platform):
         decorator.set_simulation_backend(platform)
     # The refused name leaves the backend as it was
     assert decorator.backend.platform == PLATFORM.lower()
+
+
+# A fresh process: a CPU oracle's first launch, then the GPU
+CPU_THEN_GPU = """
+import importlib
+import sys
+
+import jax
+import jax.numpy as jnp
+from jax.extend.backend import backends
+
+sys.path.insert(0, sys.argv[1])
+decorator = importlib.import_module('oracle.decorator')
+api = importlib.import_module('oracle.api')
+if sys.argv[2] == 'set':
+    decorator.set_simulation_backend('CPU')
+
+
+@decorator.kernel(
+    hbm=32768,
+    input=[{'addr': 0, 'shape': (64, 64), 'dtype': jnp.bfloat16}],
+    output=[{'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16}],
+)
+def copy():
+    api.load_rm(n=64, addr_in=0, addr_out=0)
+    api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+
+copy('fsim-compile')()
+print(jax.config.jax_platforms, sorted(backends()))
+try:
+    decorator.set_simulation_backend('GPU')
+except ValueError as refusal:
+    print(refusal)
+"""
+
+
+@pytest.mark.parametrize('first', ['launch', 'set'])
+def test_cpu_oracle_starts_cpu_alone(first):
+    target_dir = os.path.dirname(os.path.dirname(api.__file__))
+    run = subprocess.run(
+        [sys.executable, '-c', CPU_THEN_GPU, target_dir, first],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # jax starts its CPU platform alone, then refuses the GPU
+    assert run.stdout.splitlines() == [
+        "cpu ['cpu']",
+        "simulation platform 'GPU' cannot be set: jax has started only its CPU platform",
+    ], run.stderr
 
 
 def test_compile_runs_the_body_once():
