@@ -115,6 +115,17 @@ def test_unstarted_loop_refused():
         k('fsim-compile')()
 
 
+def test_loop_expression_as_computation_attribute_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', 0, 4)
+        api.load_rm(n='%i', addr_in=0, addr_out=0)
+        api.end_loop()
+
+    with pytest.raises(TypeError, match='Loop expressions are not supported for computation'):
+        k('fsim-compile')()
+
+
 def run_printing(kern, a, prefix, inputs):
     """Compile and run on inputs a kernel of oracle a that prints after prefix"""
 

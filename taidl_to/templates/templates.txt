@@ -188,7 +188,7 @@ for name, arg in attrs.items():
 
 for name, arg in comp_attrs.items():
     if isinstance(arg, str):
-        raise ValueError('Loop expressions are not supported for computation attributes')
+        raise TypeError('Loop expressions are not supported for computation attributes')
 {{fsim_compile}}
 instruction_scopes[cur_scope] += output
 global_counters['instruction_counter'] += 1
