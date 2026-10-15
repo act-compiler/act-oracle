@@ -23,7 +23,7 @@ mode = None
 instruction_scopes = defaultdict(list)
 
 loop_stack = []
-cur_scope = "main"
+cur_scope = 'main'
 
 def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list):
     if loop_stack:
@@ -31,23 +31,23 @@ def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list)
     _, prologue = semantic_init(hbm_size)
     params, marshal = kernel_prologue(hbm_size, inputs, constants)
     epilogue, results, result_types = kernel_epilogue(f"%d0.{global_counters['d0']['counter']}", outputs, ssa_types)
-    returned = f" {', '.join(results)} : {', '.join(result_types)}" if results else ""
-    module = "module @compiled {\n"
+    returned = f" {', '.join(results)} : {', '.join(result_types)}" if results else ''
+    module = 'module @compiled {\n'
 
     module += f"func.func public @main({', '.join(params)}) -> ({', '.join(result_types)}) "
-    module += "{\n"
+    module += '{\n'
     for line in marshal + prologue:
-        module += "\t" + line + "\n"
-    for line in instruction_scopes["main"] + epilogue:
-        module += "\t" + line + "\n"
-    module += f"\treturn{returned}\n"
-    module+= "}\n}\n"
+        module += '\t' + line + '\n'
+    for line in instruction_scopes['main'] + epilogue:
+        module += '\t' + line + '\n'
+    module += f'\treturn{returned}\n'
+    module+= '}\n}\n'
 
     return module
 
 def start_loop(var_name, start, end):
     global cur_scope
-    loop = {'var': "%" + var_name, 'id': global_counters['total_loop_counter'], 'start': start, 'end': end,
+    loop = {'var': '%' + var_name, 'id': global_counters['total_loop_counter'], 'start': start, 'end': end,
             'parent': cur_scope, 'inits': [], 'args': [], 'types': []}
     global_counters['total_loop_counter'] += 1
     # The body names each buffer afresh as a block argument
@@ -64,7 +64,7 @@ def start_loop(var_name, start, end):
 def end_loop():
     global cur_scope
     if not loop_stack:
-        raise ValueError("end_loop has no start_loop")
+        raise ValueError('end_loop has no start_loop')
     loop = loop_stack.pop()
     body = instruction_scopes.pop(cur_scope, [])
     cur_scope = loop['parent']
@@ -76,21 +76,21 @@ def end_loop():
             counter['counter'] += 1
             results.append(f"%{name}.{counter['counter']}")
             ssa_types[results[-1]] = mlir_type(counter['type'])
-    types = ", ".join(["tensor<i64>"] + loop['types'])
-    pairs = ", ".join(f"{arg} = {init}" for arg, init in zip([loop['var']] + loop['args'], [f"{n}.start"] + loop['inits']))
+    types = ', '.join(['tensor<i64>'] + loop['types'])
+    pairs = ', '.join(f'{arg} = {init}' for arg, init in zip([loop['var']] + loop['args'], [f'{n}.start'] + loop['inits']))
     lines = [f"{n}.start = stablehlo.constant dense<{loop['start']}> : tensor<i64>",
              f"{', '.join([n + '.var'] + results)} = stablehlo.while({pairs}) : {types}",
-             "cond {",
+             'cond {',
              f"\t{n}.end = stablehlo.constant dense<{loop['end']}> : tensor<i64>",
              f"\t{n}.more = stablehlo.compare LT, {loop['var']}, {n}.end : (tensor<i64>, tensor<i64>) -> tensor<i1>",
-             f"\tstablehlo.return {n}.more : tensor<i1>",
-             "} do {"]
-    lines += ["\t" + line for item in body for line in item.split("\n") if line.strip()]
-    lines += [f"\t{n}.one = stablehlo.constant dense<1> : tensor<i64>",
+             f'\tstablehlo.return {n}.more : tensor<i1>',
+             '} do {']
+    lines += ['\t' + line for item in body for line in item.split('\n') if line.strip()]
+    lines += [f'\t{n}.one = stablehlo.constant dense<1> : tensor<i64>',
               f"\t{n}.next = stablehlo.add {loop['var']}, {n}.one : tensor<i64>",
               f"\tstablehlo.return {', '.join([n + '.next'] + yields)} : {types}",
-              "}"]
-    instruction_scopes[cur_scope].append("\n".join(lines))
+              '}']
+    instruction_scopes[cur_scope].append('\n'.join(lines))
 
 def debug(prefix: str, data: str) -> None:
     global instruction_scopes, cur_scope, state, global_counters
@@ -101,18 +101,18 @@ def debug(prefix: str, data: str) -> None:
         # The handler prints the prefix up to a nul
         prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
         prefix_len = len(prefix_bytes)
-        prefix_string = "["
+        prefix_string = '['
         for i in range(len(prefix_bytes)):
             if i != 0:
-                prefix_string += ", "
-            prefix_string += f"{prefix_bytes[i]}"
-        prefix_string += "]"
+                prefix_string += ', '
+            prefix_string += f'{prefix_bytes[i]}'
+        prefix_string += ']'
 
-        data_name = data.split("[")[0]
+        data_name = data.split('[')[0]
 
         rhs_loc = parameter_util(global_counters, {}, state, {}, {}, data_name)
-        data_dims = ast.literal_eval('[' + global_counters[data_name]["type"].split("[")[1].split("]")[0] + ']')
-        debug_dims = ast.literal_eval('[' + data.split("[")[1].split("]")[0] + ']')
+        data_dims = ast.literal_eval('[' + global_counters[data_name]['type'].split('[')[1].split(']')[0] + ']')
+        debug_dims = ast.literal_eval('[' + data.split('[')[1].split(']')[0] + ']')
         slice_configs = []
         for i in range(len(debug_dims)):
             data_dims[i] = 1
@@ -123,14 +123,14 @@ def debug(prefix: str, data: str) -> None:
             else:
                 slice_configs.append('0')
         
-        data_type = global_counters[data_name]["type"].split("[")[0]
+        data_type = global_counters[data_name]['type'].split('[')[0]
         lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice', data_type, data_dims)
         line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, slice_configs, {}, state, {}, {}, ssa_types)
         output.append(line)
 
         rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice')
         lhs_loc, lhs_type = lhs_util({}, state, global_counters, {}, {}, 'debug_slice_f64', 'f64', data_dims)
-        line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
+        line = sh_cast('convert', lhs_loc, lhs_type, rhs_loc, ssa_types)
         output.append(line)
 
         rhs_loc = parameter_util(global_counters, {}, state, {}, {}, 'debug_slice_f64')
@@ -163,7 +163,7 @@ for name, arg in attrs.items():
 
 for name, arg in comp_attrs.items():
     if(isinstance(arg, str)):
-        raise ValueError("Loop expressions are not supported for computation attributes")
+        raise ValueError('Loop expressions are not supported for computation attributes')
 {{fsim_compile}}
 instruction_scopes[cur_scope] += (output)
 global_counters['instruction_counter'] += 1
@@ -187,13 +187,13 @@ output += lines
 ### TEMPLATE: RESHAPE ###
 rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_cast("reshape", lhs_loc, lhs_type, rhs_loc, ssa_types)
+line = sh_cast('reshape', lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: CONVERT ###
 rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_cast("convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
+line = sh_cast('convert', lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: COPY ###
@@ -205,13 +205,13 @@ output.append(line)
 ### TEMPLATE: EXP ###
 rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_unary("exponential", lhs_loc, lhs_type, rhs_loc, ssa_types)
+line = sh_unary('exponential', lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BITCAST_CONVERT ###
 rhs_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_cast("bitcast_convert", lhs_loc, lhs_type, rhs_loc, ssa_types)
+line = sh_cast('bitcast_convert', lhs_loc, lhs_type, rhs_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DOT ###
@@ -225,8 +225,8 @@ output.append(line)
 ### TEMPLATE: TRANSPOSE ###
 in_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{in}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = "{{{dims}}}"
-dims = dims.replace("'","")
+dims = '{{{dims}}}'
+dims = dims.replace("'",'')
 line = sh_transpose(lhs_loc, lhs_type, in_loc, dims, ssa_types)
 output.append(line)
 
@@ -234,41 +234,41 @@ output.append(line)
 a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("add", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
+line = sh_binary('add', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SUBTRACT ###
 a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("subtract", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
+line = sh_binary('subtract', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MULTIPLY ###
 a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("multiply", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
+line = sh_binary('multiply', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: DIVIDE ###
 a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("divide", lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
+line = sh_binary('divide', lhs_loc, lhs_type, a_loc, b_loc, ssa_types)
 output.append(line)
 
 ### TEMPLATE: REDUCE ###
 a_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
 dim = {{dims}}
-line = sh_reduce("add", lhs_loc, lhs_type, a_loc, dim, ssa_types)
+line = sh_reduce('add', lhs_loc, lhs_type, a_loc, dim, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BROADCAST ###
 b_loc = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-dims = "{{{dims}}}"
+dims = '{{{dims}}}'
 line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
@@ -276,21 +276,21 @@ output.append(line)
 rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("maximum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
+line = sh_binary('maximum', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: MINIMUM ###
 rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("minimum", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
+line = sh_binary('minimum', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: XOR ###
 rhs_first = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{A}})
 rhs_second = parameter_util(global_counters, attrs, state, lvars, comp_attrs, {{B}})
 lhs_loc, lhs_type = lhs_util(attrs, state, global_counters, lvars, comp_attrs, {{lhs}}, {{type}}, {{size}})
-line = sh_binary("xor", lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
+line = sh_binary('xor', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
 ### TEMPLATE: SEMANTIC_INIT ###
