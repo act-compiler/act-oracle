@@ -49,7 +49,7 @@ def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
         accelerator.data_model,
     )
 
-    print(f'Generated api.py')
+    print('Generated api.py')
 
     print(f'Oracle API generation complete for {accelerator.name}')
 

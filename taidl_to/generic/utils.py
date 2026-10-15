@@ -114,7 +114,7 @@ def compute(exp_: str) -> int | float:
     import ast
 
     try:
-        if f'%loop_final' in exp_:
+        if '%loop_final' in exp_:
             return exp_
         output = eval(compile(ast.parse(exp_, mode='eval'), '', 'eval'))
         if type(output) is float:
