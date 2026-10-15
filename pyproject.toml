@@ -15,8 +15,8 @@ readme = "README.md"
 dependencies = [
     "taidl @ git+https://github.com/act-compiler/taidl.git@v2.3",
     "numpy>=2.0",
-    "jax==0.10.2",
-    "jaxlib==0.10.2",
+    "jax==0.11.2",
+    "jaxlib==0.11.2",
     "nanobind>=2.8.0",
     "cmake>=3.15",
 ]
