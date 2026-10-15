@@ -3,7 +3,17 @@
 from taidl import Instruction
 
 from .semantic_generator import generate_semantic_code
-from .template import generate_code, indent_code, init_templates, templates
+from .template import dict_text, generate_code, indent_code, init_templates, layout, templates
+
+# Module state an API function reads or sets
+SHARED_NAMES = {
+    'comp_attrs',
+    'cur_scope',
+    'global_counters',
+    'instruction_scopes',
+    'ssa_types',
+    'state',
+}
 
 
 def generate_inputs(instruction: Instruction) -> str:
@@ -32,8 +42,8 @@ def generate_inputs(instruction: Instruction) -> str:
             'rhs_name': f"'{buffer_name}'",
             'lhs': f"'In{counter}'",
             'type': f"'{model.var_type}'",
-            'size': '[' + ','.join(size_list) + ']',
-            'slice': '[' + ','.join(slice_configs) + ']',
+            'size': '[' + ', '.join(size_list) + ']',
+            'slice': '[' + ', '.join(slice_configs) + ']',
         }
         output += generate_code(templates['SLICE_LOAD'], mapping)
 
@@ -60,7 +70,7 @@ def generate_outputs(instruction: Instruction) -> str:
         mapping = {
             'lhs': f"'Out{counter}'",
             'rhs_name': f"'{buffer_name}'",
-            'slice': '[' + ','.join(start_list) + ']',
+            'slice': '[' + ', '.join(start_list) + ']',
         }
         code_output += generate_code(templates['SLICE_STORE'], mapping)
 
@@ -71,27 +81,34 @@ def generate_api_function(instruction: Instruction) -> str:
     """Generate the API function for an instruction"""
     init_templates()
 
-    attr_list = ','.join(instruction.comp_attr + instruction.parameters)
+    attr_list = ', '.join(instruction.comp_attr + instruction.parameters)
     func_name = instruction.instruction
+
+    # Refuse an attribute shadowing one
+    for attr in instruction.comp_attr + instruction.parameters:
+        if attr in SHARED_NAMES:
+            raise NotImplementedError(
+                f"{func_name}: attribute name '{attr}' is reserved by the oracle"
+            )
 
     set_attributes = ''
     for attr in instruction.parameters:
-        set_attributes += f'\t"{attr}": {attr},\n'
-    set_attributes = indent_code(set_attributes)
+        set_attributes += f"'{attr}': {attr},\n"
+    set_attributes = dict_text(set_attributes)
 
     set_comp_attr = ''
     for attr in instruction.comp_attr:
-        set_comp_attr += f'\t"{attr}": {attr},\n'
-    set_comp_attr = indent_code(set_comp_attr)
+        set_comp_attr += f"'{attr}': {attr},\n"
+    set_comp_attr = dict_text(set_comp_attr)
 
     constraints = ''
     for idx, line in enumerate(instruction.constraints):
-        constraints += f'#f{idx} = (' + line + ')\n'
+        constraints += f'# f{idx} = (' + line + ')\n'
     for idx, line in enumerate(instruction.constraints):
         if idx == 0:
-            constraints += f'\n#flag = f{idx} '
+            constraints += f'\n# flag = f{idx}'
         else:
-            constraints += f'and f{idx} '
+            constraints += f' and f{idx}'
 
     update = ''
     for line in instruction.update:
@@ -121,7 +138,7 @@ def generate_api_function(instruction: Instruction) -> str:
         },
     )
 
-    func_def = f'def {func_name}({attr_list}) -> None:\n'
-    output = func_def + indent_code(output)
+    func_def = f'\n\ndef {func_name}({attr_list}) -> None:\n'
+    output = layout(func_def + indent_code(output))
 
     return output

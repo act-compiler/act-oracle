@@ -78,11 +78,15 @@ class OracleVisitor(IDLV2Visitor):
     def generate_from_template(
         self, template_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
     ):
-        mapping = {'lhs': f'"{lhs_name}"', 'type': f'"{lhs_type}"', 'size': f'[{lhs_shape}]'}
+        mapping = {
+            'lhs': f"'{lhs_name}'",
+            'type': f"'{lhs_type}'",
+            'size': '[' + ', '.join(lhs_shape.split(',')) + ']',
+        }
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT', 'EXP']:
             if len(operand_names) > 0:
-                mapping['in'] = f'"{operand_names[0]}"'
+                mapping['in'] = f"'{operand_names[0]}'"
 
         elif template_name in [
             'ADD',
@@ -94,12 +98,12 @@ class OracleVisitor(IDLV2Visitor):
             'XOR',
         ]:
             if len(operand_names) >= 2:
-                mapping['A'] = f'"{operand_names[0]}"'
-                mapping['B'] = f'"{operand_names[1]}"'
+                mapping['A'] = f"'{operand_names[0]}'"
+                mapping['B'] = f"'{operand_names[1]}'"
 
         elif template_name == 'BROADCAST':
             if len(operand_names) > 0:
-                mapping['A'] = f'"{operand_names[0]}"'
+                mapping['A'] = f"'{operand_names[0]}'"
             # broadcast maps operand dims by position; keep the spec's order
             if 'dimensions' not in attributes:
                 raise ValueError(f"{self.entry_name}: broadcast '%{lhs_name}' has no dimensions")
@@ -111,7 +115,7 @@ class OracleVisitor(IDLV2Visitor):
 
         elif template_name == 'TRANSPOSE':
             if len(operand_names) > 0:
-                mapping['in'] = f'"{operand_names[0]}"'
+                mapping['in'] = f"'{operand_names[0]}'"
             if 'dimensions' in attributes:
                 dims = attributes['dimensions']
                 if isinstance(dims, list):
@@ -121,13 +125,13 @@ class OracleVisitor(IDLV2Visitor):
 
         elif template_name == 'DOT':
             if len(operand_names) >= 2:
-                mapping['A'] = f'"{operand_names[0]}"'
-                mapping['B'] = f'"{operand_names[1]}"'
+                mapping['A'] = f"'{operand_names[0]}'"
+                mapping['B'] = f"'{operand_names[1]}'"
 
             # dot pairs dimension lists by position; keep the spec's order
             def format_dims(value):
                 if isinstance(value, list):
-                    return '"{' + ', '.join(str(v) for v in value) + '}"'
+                    return "'{" + ', '.join(str(v) for v in value) + "}'"
                 elif isinstance(value, str):
                     return value
 
@@ -138,7 +142,7 @@ class OracleVisitor(IDLV2Visitor):
 
         elif template_name == 'REDUCE_ADD':
             assert len(operand_names) == 1
-            mapping['A'] = f'"{operand_names[0]}"'
+            mapping['A'] = f"'{operand_names[0]}'"
             if 'dimensions' in attributes:
                 dims = attributes['dimensions']
                 if isinstance(dims, list):

@@ -253,6 +253,36 @@ ENTRY refused {{
         generate_oracle(acc)
 
 
+# Module state a generated function reads or sets
+SHARED_NAMES = [
+    'comp_attrs',
+    'cur_scope',
+    'global_counters',
+    'instruction_scopes',
+    'ssa_types',
+    'state',
+]
+
+
+@pytest.mark.parametrize('addressing', [False, True])
+@pytest.mark.parametrize('name', SHARED_NAMES)
+def test_attribute_named_as_a_shared_name_refused(name, addressing):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    # The name as a computation or an addressing attribute
+    attributes = ([], [name, 'addr']) if addressing else ([name], ['addr'])
+    instr = acc.add_instruction('refused', *attributes)
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics("""
+ENTRY refused {
+    %In1 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In1);
+}
+""")
+    with pytest.raises(NotImplementedError, match=f"refused: attribute name '{name}' is reserved"):
+        generate_oracle(acc)
+
+
 @pytest.mark.parametrize('name', BROADCASTS)
 def test_broadcast_dimensions(name):
     x = small_ints((64, 64))

@@ -6,6 +6,7 @@ import itertools
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -19,6 +20,8 @@ EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'example
 PLATFORM = 'CPU'
 # Each imported oracle gets a package name of its own
 oracle_ids = itertools.count()
+# The tree's ruff settings, which the examples' generated oracles meet
+PYPROJECT = os.path.join(os.path.dirname(EXAMPLES_DIR), 'pyproject.toml')
 
 
 def pytest_addoption(parser):
@@ -40,6 +43,14 @@ def load_bf16_matrix(path, shape):
     np_uint8 = np_uint8.reshape(shape[0], shape[1], 2)
     j_uint8 = jnp.array(np_uint8, dtype=jnp.uint8)
     return jax.lax.bitcast_convert_type(j_uint8, jnp.bfloat16)
+
+
+def check_oracle(oracle_dir):
+    """Fail unless the oracle's Python passes ruff's format check and lint"""
+    for check in (['format', '--check', '--diff'], ['check']):
+        command = ['ruff', *check, '--no-cache', '--config', PYPROJECT, oracle_dir]
+        run = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert run.returncode == 0, f'ruff {check[0]} of {oracle_dir}:\n{run.stdout}{run.stderr}'
 
 
 def import_oracle(target_dir, name):
@@ -64,7 +75,10 @@ def generate_example(example_dir):
     spec = importlib.util.spec_from_file_location(name, path)
     spec.loader.exec_module(importlib.util.module_from_spec(spec))
     (accelerator,) = os.listdir(os.path.join(work_dir, 'targets'))
-    return os.path.join(work_dir, 'targets', accelerator)
+    target_dir = os.path.join(work_dir, 'targets', accelerator)
+    # Its oracle laid out as ruff lays out the tree
+    check_oracle(os.path.join(target_dir, 'oracle'))
+    return target_dir
 
 
 def generate_and_import_oracle(example_dir):
