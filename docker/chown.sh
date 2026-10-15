@@ -11,7 +11,8 @@ UID_N="$(id -u)"
 GID_N="$(id -g)"
 
 # Remove any previous leftover taidl-to-chown container
-if docker ps -a --format '{{.Names}}' | grep -xq "${CHOWN_CONTAINER_NAME}"; then
+LISTED=$(docker ps -a --format '{{.Names}}')
+if grep -xq "${CHOWN_CONTAINER_NAME}" <<<"${LISTED}"; then
   echo "Removing existing leftover container named ${CHOWN_CONTAINER_NAME}..."
   docker rm -f ${CHOWN_CONTAINER_NAME} >/dev/null 2>&1
 fi
