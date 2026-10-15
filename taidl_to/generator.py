@@ -15,7 +15,7 @@ from taidl import Accelerator
 from .api_generator import generate_api_file
 
 
-def generate_oracle(accelerator: Accelerator, base_dir: str = None) -> None:
+def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> None:
     """
     Generate Oracle API code for an accelerator.
 
