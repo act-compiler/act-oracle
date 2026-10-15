@@ -1,8 +1,10 @@
 ### TEMPLATE: API_FILE ###
-import jax.numpy as jnp
 import ast
-from .utils import *
 from collections import defaultdict
+
+import jax.numpy as jnp
+
+from .utils import *
 
 
 {{semantic_init}}
