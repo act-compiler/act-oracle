@@ -442,8 +442,6 @@ def kernel_prologue(hbm_size, inputs, constants):
             gap(addr - cursor)
         parts.append((loc, loc_t))
         cursor = addr + nbytes
-    if cursor > hbm_size:
-        raise ValueError(f'kernel inputs and constants run past HBM of {hbm_size} bytes')
     if cursor < hbm_size:
         gap(hbm_size - cursor)
     hbm_t = mlir_type(f'u8[{hbm_size}]')

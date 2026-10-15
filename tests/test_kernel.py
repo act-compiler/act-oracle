@@ -308,7 +308,7 @@ def test_loop_matches_unrolled(twin):
 
 
 # Two 8192-byte inputs that overlap or run past HBM
-@pytest.mark.parametrize('second, error', [(4096, 'overlap'), (12288, 'run past HBM')])
+@pytest.mark.parametrize('second, error', [(4096, 'overlap'), (12288, 'runs outside HBM')])
 def test_input_layout_refused(second, error):
     @kernel(
         hbm=16384,
@@ -321,6 +321,44 @@ def test_input_layout_refused(second, error):
 
     with pytest.raises(ValueError, match=error):
         k('fsim-compile')()
+
+
+# Each kind of piece, past HBM or before it
+@pytest.mark.parametrize(
+    'pieces, message',
+    [
+        (
+            {'output': [dict(OUTPUT[0], addr=28672)]},
+            "output 0 of kernel 'copy_q', 8192 bytes at byte 28672, runs outside HBM of 32768 bytes",
+        ),
+        (
+            {'output': [dict(OUTPUT[0], addr=-8)]},
+            "output 0 of kernel 'copy_q', 8192 bytes at byte -8, runs outside HBM of 32768 bytes",
+        ),
+        (
+            {'input': [*INPUT[:2], dict(INPUT[2], addr=28672)]},
+            "input 2 of kernel 'copy_q', 8192 bytes at byte 28672, runs outside HBM of 32768 bytes",
+        ),
+        (
+            {'input': [dict(INPUT[0], addr=-8), *INPUT[1:]]},
+            "input 0 of kernel 'copy_q', 8192 bytes at byte -8, runs outside HBM of 32768 bytes",
+        ),
+        (
+            {'constant': [dict(INPUT[0], addr=28672, value=np.zeros((64, 64), jnp.bfloat16))]},
+            "constant 0 of kernel 'copy_q', 8192 bytes at byte 28672, runs outside HBM of 32768 bytes",
+        ),
+    ],
+    ids=['output', 'output-before', 'input', 'input-before', 'constant'],
+)
+def test_piece_outside_hbm_refused(pieces, message):
+    @kernel(hbm=32768, **({'input': INPUT, 'constant': [], 'output': OUTPUT} | pieces))
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(ValueError) as refusal:
+        copy_q('fsim-compile')()
+    assert str(refusal.value) == message
 
 
 def test_constant_reaches_hbm():
