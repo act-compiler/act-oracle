@@ -190,6 +190,83 @@ def test_unstarted_loop_refused():
         k('fsim-compile')()
 
 
+# Each loop bound that is not an integer
+@pytest.mark.parametrize(
+    'start, end, message',
+    [
+        (0, 4.5, "start_loop 'i': end 4.5 is not an integer"),
+        (0.0, 4, "start_loop 'i': start 0.0 is not an integer"),
+        (0, True, "start_loop 'i': end True is not an integer"),
+    ],
+    ids=['end', 'start', 'bool'],
+)
+def test_non_integer_loop_bound_refused(start, end, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', start, end)
+        api.load_rm(n=16, addr_in='2048 * %i', addr_out='16 * %i')
+        api.end_loop()
+
+    with pytest.raises(TypeError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message
+
+
+def test_loop_variable_in_use_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', 0, 2)
+        api.start_loop('i', 0, 2)
+        api.load_rm(n=8, addr_in='1024 * %i', addr_out='8 * %i')
+        api.end_loop()
+        api.end_loop()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == "start_loop 'i': loop variable %i is already in use"
+
+
+# Each loop variable that is not a name or is one the module keeps
+@pytest.mark.parametrize(
+    'var, error, message',
+    [
+        (1, TypeError, 'start_loop 1: loop variable 1 is not a string'),
+        ('i j', ValueError, "start_loop 'i j': loop variable 'i j' is not a name"),
+        (
+            'arg0',
+            ValueError,
+            "start_loop 'arg0': %arg0 is a name the module keeps for its parameters",
+        ),
+    ],
+    ids=['number', 'space', 'parameter'],
+)
+def test_loop_variable_name_refused(var, error, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop(var, 0, 2)
+        api.load_rm(n=8, addr_in=0, addr_out=0)
+        api.end_loop()
+
+    with pytest.raises(error) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message
+
+
+# NumPy integer bounds run as the ints they hold
+def test_numpy_integer_loop_bounds_run():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', np.int64(0), np.int32(4))
+        api.load_rm(n=16, addr_in='2048 * %i', addr_out='16 * %i')
+        api.end_loop()
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    Q, K, V = load_qkv()
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
+
+
 def test_loop_expression_as_computation_attribute_refused():
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():

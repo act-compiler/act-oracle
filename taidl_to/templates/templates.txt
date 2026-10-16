@@ -58,6 +58,23 @@ def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list)
 def start_loop(var_name, start, end):
     global cur_scope
     require_trace('start_loop')
+    # A name a loop expression can read, not a parameter's
+    if not isinstance(var_name, str):
+        raise TypeError(f'start_loop {var_name!r}: loop variable {var_name!r} is not a string')
+    if not (var_name.isascii() and var_name.isidentifier()):
+        raise ValueError(f'start_loop {var_name!r}: loop variable {var_name!r} is not a name')
+    if var_name.startswith('arg') and var_name[3:].isdigit():
+        raise ValueError(
+            f'start_loop {var_name!r}: %{var_name} is a name the module keeps for its parameters'
+        )
+    # Each bound an integer, a NumPy one as an int
+    for bound, value in (('start', start), ('end', end)):
+        if not integral(value):
+            raise TypeError(f'start_loop {var_name!r}: {bound} {value!r} is not an integer')
+    start, end = int(start), int(end)
+    # A variable no enclosing loop holds
+    if any(loop['var'] == '%' + var_name for loop in loop_stack):
+        raise ValueError(f'start_loop {var_name!r}: loop variable %{var_name} is already in use')
     loop = {
         'var': '%' + var_name,
         'id': global_counters['total_loop_counter'],
