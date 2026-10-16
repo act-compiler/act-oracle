@@ -19,15 +19,15 @@ def attention(kernel, api):
         api.load_03(n=64, addr_in=0, addr_out=0)
 
         api.gemm_33(addr_1=0, addr_2=64, addr_out=0)
-        # ===== STAGE 2: Normalize Scores (softmax) =====
+        # P = softmax(S)
         api.softmax(n=64, addr=0)  # In place softmax
-        # ===== STAGE 3: Prepare for Second MatMul =====
+        # P and V where the second product reads them
         api.mov_23(n=64, addr_in=0, addr_out=0)  # P is now in d3 addr=0
         api.load_03(n=64, addr_in=16384, addr_out=64)  # V is now in d3 addr=64
         # O = P @ V, by gemm_33
         api.gemm_33(addr_1=0, addr_2=64, addr_out=0)
         api.mov_21(n=64, addr_in=0, addr_out=0)
-        # ===== STAGE 5: Store Result =====
+        # O to HBM
         api.store_10(n=64, addr_in=0, addr_out=24576)
 
     return attention_

@@ -7,7 +7,7 @@ from taidl_to import generate_oracle
 mini_trn = Accelerator('mini_trn')
 
 
-# Define Data Models
+# Data models
 
 # d1: 128 rows x 64 columns of bf16
 mini_trn.add_data_model('d1', [128], [64], 'bf16')
@@ -16,7 +16,7 @@ mini_trn.add_data_model('d1', [128], [64], 'bf16')
 mini_trn.add_data_model('d2', [64], [64], 'bf16')
 
 
-# Define Instruction semantics
+# Instructions
 
 # load_rm: load d1 from HBM (d0), row-major
 instr = mini_trn.add_instruction('load_rm', ['n'], ['addr_in', 'addr_out'])
@@ -68,7 +68,7 @@ ENTRY {
 }
 """)
 
-# (5) mov: Copies data from d2 to d1
+# mov: copy d2 to d1
 instr = mini_trn.add_instruction('mov', ['n'], ['addr_in', 'addr_out'])
 instr.set_inputs([['d2', ['@a.addr_in'], ['@c.n']]])  # bf16[@c.n, 64]
 instr.set_outputs([['d1', ['@a.addr_out'], ['@c.n']]])  # bf16[@c.n, 64]
@@ -91,7 +91,7 @@ ENTRY {
 }
 """)
 
-# (7) softmax: Applies softmax along dimension 1 (rows) on d2
+# softmax: softmax of each d2 row, in place
 instr = mini_trn.add_instruction('softmax', ['n'], ['addr'])
 instr.set_inputs([['d2', ['@a.addr'], ['@c.n']]])
 instr.set_outputs([['d2', ['@a.addr'], ['@c.n']]])  # In-place operation
@@ -106,5 +106,5 @@ ENTRY {
 """)
 
 
-# Generate programming APIs and test oracle (functional simulator)
+# Generate the oracle
 generate_oracle(mini_trn)

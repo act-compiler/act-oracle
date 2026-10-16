@@ -69,7 +69,7 @@ def import_oracle(target_dir, name):
 def generate_example(example_dir):
     """Generate the example's oracle into a temp dir and return its target dir"""
     work_dir = tempfile.mkdtemp()
-    # A copy of the spec, loaded, generates its oracle beside it
+    # The spec's copy generates its oracle beside it
     name = os.path.basename(example_dir)
     path = shutil.copy(os.path.join(example_dir, f'{name}.py'), work_dir)
     spec = importlib.util.spec_from_file_location(name, path)
@@ -128,7 +128,7 @@ def attention_reference(data_dir):
     S = bf16(Q @ K.T)
     E = bf16(np.exp(S))
     P = bf16(E / bf16(E.sum(axis=1, keepdims=True)))
-    # Two bf16 ulps at max|V| bound every output on the CPU
+    # On the CPU, two bf16 ulps at max|V|
     ulp = 2.0 ** (np.floor(np.log2(np.abs(V).max())) - 7)
     # On the GPU, twice the two ulps an H100 reaches
     tol = (2 if PLATFORM == 'CPU' else 4) * ulp

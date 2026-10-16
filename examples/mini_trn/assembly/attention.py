@@ -25,11 +25,9 @@ def attention(kernel, api):
         # Compute S = Q @ K^T
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
-        # ===== STAGE 2: Normalize Scores (softmax) =====
         # Apply softmax to S, giving P (in-place in d2)
         api.softmax(n=64, addr=0)
 
-        # ===== STAGE 3: Prepare for Second MatMul =====
         # Move P from d2[0:63] to d1[0:63]
         api.mov(n=64, addr_in=0, addr_out=0)
 
@@ -39,7 +37,6 @@ def attention(kernel, api):
         # Compute O = P @ V, result in d2[0:63]
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
-        # ===== STAGE 5: Store Result =====
         # Move O from d2[0:63] to d1[0:63]
         api.mov(n=64, addr_in=0, addr_out=0)
 
