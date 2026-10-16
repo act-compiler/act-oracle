@@ -10,7 +10,7 @@ from jax.extend.backend import backends, get_backend, get_compile_options
 
 from . import api
 from .build import print_handler_ext
-from .utils import spec_bytes
+from .utils import XLA_ELEM_TYPE, spec_bytes
 
 backend = None
 
@@ -78,6 +78,15 @@ def check_declaration(name, hbm, input, constant, output):
                     raise TypeError(
                         f'{what}: shape {spec["shape"]} has dimension {dim!r}, not an integer'
                     )
+            # Each dtype one the oracle maps
+            try:
+                dtype = np.dtype(spec['dtype'])
+            except TypeError:
+                raise TypeError(
+                    f'{what}: dtype {spec["dtype"]!r} is not supported by the oracle'
+                ) from None
+            if dtype.name not in XLA_ELEM_TYPE:
+                raise TypeError(f'{what}: dtype {dtype} is not supported by the oracle')
 
     # Each constant's value of its declared shape and dtype
     for i, const in enumerate(constant):
