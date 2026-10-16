@@ -1,6 +1,6 @@
 """TAIDL-TO - Test Oracle Generator for TAIDL"""
 
-__version__ = '2.9'
+__version__ = '2.10'
 
 from .generator import generate_oracle
 

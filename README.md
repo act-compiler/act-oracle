@@ -20,7 +20,7 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.9
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.10
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
@@ -94,6 +94,28 @@ It raises `ValueError` for:
 A run, `k('fsim')(*inputs)`, raises `ValueError` for a kernel not yet compiled, a number of arguments other than the number of its inputs, or an argument whose shape or dtype is not its input's, and `TypeError` for an argument that is not a NumPy array or scalar or a jax array.
 `k('fsim-compile')` takes no arguments and raises `ValueError` when given any.
 An instruction, `start_loop`, `end_loop` or `debug` called outside a kernel body raises `ValueError`.
+
+## What a call refuses
+
+An instruction called in a kernel checks what the call passes as the kernel is compiled, with an error that names the instruction and what it refuses.
+In a loop each check covers every iteration, and the error names the first iteration that fails, as in `at %i = 2`.
+It raises `TypeError` for:
+
+- a value that is neither an integer nor a loop expression, such as `0.5`, `64.0` or `True`, where a NumPy integer is one
+- a loop expression passed as a computational attribute
+
+It raises `ValueError` for:
+
+- a loop expression outside TAIDL's arithmetic, or one that reads a variable no enclosing loop holds
+- an expression that divides by zero
+- a region whose window runs outside its buffer, whose size is not positive, or whose shape is not its tile's, but for a tile of its element count, read or written row-major where no loop sizes either
+- a semantics whose shapes or attributes disagree at the call's values, or one of whose dimensions is not positive
+- a constraint the call breaks
+
+A call checks its instruction's constraints against the state it finds, then runs the instruction's state updates in the order the spec gives them, so its regions and semantics read the updated state.
+`start_loop` raises `TypeError` for a bound that is not an integer and `ValueError` for a variable an enclosing loop already holds.
+`debug` reads each entry of its index as a Python integer literal, such as `0x10`, and prints the whole buffer for a bare `:`, as in `d1[:]`.
+It raises `ValueError` for a buffer it does not know, a missing or empty index, as in `d1[]`, an index with more entries than the buffer has dimensions or a window outside the buffer, and `TypeError` for an index that is not an integer.
 
 ## Platforms
 
