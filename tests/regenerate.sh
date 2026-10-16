@@ -5,5 +5,5 @@ cd "$(dirname "$0")/.."
 
 ./docker/exec.sh \
   "pip install -e . -q && \
-  python tests/regenerate.py examples/QKV && \
-  python tests/regenerate.py examples/QKV_new"
+  python tests/regenerate.py examples/mini_trn && \
+  python tests/regenerate.py examples/mini_trn_double"

@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 
-def qkv(kernel, api):
+def attention(kernel, api):
     @kernel(
         hbm=32768,
         input=[
@@ -12,9 +12,8 @@ def qkv(kernel, api):
         constant=[],
         output=[{'addr': 24576, 'shape': (64, 64), 'dtype': jnp.bfloat16}],
     )
-    def qkv_():
-        # Kernel 2: gemm_13, gemm_33
-        # ===== STAGE 1: Compute Attention Scores (Q × K^T) =====
+    def attention_():
+        # S = Q @ K^T, by gemm_13
         api.load_01(n=64, addr_in=8192, addr_out=0)  # K
         api.transpose_13(addr_in=0, addr_out=0)  # K^T
         api.load_01(n=64, addr_in=0, addr_out=0)
@@ -23,12 +22,12 @@ def qkv(kernel, api):
         # ===== STAGE 2: Normalize Scores (softmax) =====
         api.softmax(n=64, addr=0)
         # ===== STAGE 3: Prepare for Second MatMul =====
-        api.mov_23(n=64, addr_in=0, addr_out=0)
-        api.load_03(n=64, addr_in=16384, addr_out=64)
-        # ===== STAGE 4: Compute Final Output (P × V) =====
-        api.gemm_33(addr_1=0, addr_2=64, addr_out=0)
+        api.mov_21(n=64, addr_in=0, addr_out=0)
+        api.load_03(n=64, addr_in=16384, addr_out=0)
+        # O = P @ V, by gemm_13
+        api.gemm_13(addr_1=0, addr_2=0, addr_out=0)
         api.mov_21(n=64, addr_in=0, addr_out=0)
         # ===== STAGE 5: Store Result =====
         api.store_10(n=64, addr_in=0, addr_out=24576)
 
-    return qkv_
+    return attention_

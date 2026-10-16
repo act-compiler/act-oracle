@@ -93,14 +93,14 @@ def run_kernel(kernel, api, kernel_module_name, assembly_dir, data_dir):
     """Run a kernel on the example's Q, K, V and return its output"""
     sys.path.insert(0, assembly_dir)
     kernel_module = importlib.import_module(kernel_module_name)
-    qkv_kernel = kernel_module.qkv(kernel, api)
-    qkv_kernel('fsim-compile')()
+    attention = kernel_module.attention(kernel, api)
+    attention('fsim-compile')()
 
     Q = load_bf16_matrix(os.path.join(data_dir, 'Q.dat'), (64, 64))
     K = load_bf16_matrix(os.path.join(data_dir, 'K.dat'), (64, 64))
     V = load_bf16_matrix(os.path.join(data_dir, 'V.dat'), (64, 64))
 
-    outputs, _ = qkv_kernel('fsim')(Q, K, V)
+    outputs, _ = attention('fsim')(Q, K, V)
     return outputs[0]
 
 
