@@ -182,10 +182,18 @@ def sh_binary(op, lhs, lhs_type, a, b, ssa_types):
 
 
 def sh_cast(op, lhs, lhs_type, x, ssa_types):
-    t = mlir_type(lhs_type)
-    line = f'{lhs} = stablehlo.{op} {x} : ({ssa_types[x]}) -> {t}'
+    t, x_t = mlir_type(lhs_type), ssa_types[x]
     ssa_types[lhs] = t
-    return line
+    if op != 'bitcast_convert' or (mlir_elem(x_t) == 'i1') == (mlir_elem(t) == 'i1'):
+        return f'{lhs} = stablehlo.{op} {x} : ({x_t}) -> {t}'
+    # A pred is one byte: convert it through u8
+    from_pred = mlir_elem(x_t) == 'i1'
+    byte_t = (x_t if from_pred else t)[: -len('i1>')] + 'ui8>'
+    first, second = ('convert', 'bitcast_convert') if from_pred else ('bitcast_convert', 'convert')
+    return (
+        f'{lhs}.byte = stablehlo.{first} {x} : ({x_t}) -> {byte_t}\n\t'
+        f'{lhs} = stablehlo.{second} {lhs}.byte : ({byte_t}) -> {t}'
+    )
 
 
 def sh_copy(lhs, lhs_type, x, ssa_types):
@@ -287,6 +295,7 @@ XLA_ELEM_TYPE = {
     'int16': 's16',
     'int32': 's32',
     'int64': 's64',
+    'bool': 'pred',
 }
 
 
@@ -299,6 +308,11 @@ def spec_bytes(spec):
     width = int(np.dtype(spec['dtype']).itemsize)
     dims = [int(d) for d in spec['shape']]
     return width * int(np.prod(dims, dtype=np.int64)), dims + ([width] if width > 1 else [])
+
+
+def byte_cast(dtype):
+    """A bool moves to and from its bytes by a convert, any other dtype by a bitcast"""
+    return 'convert' if np.dtype(dtype) == np.bool_ else 'bitcast_convert'
 
 
 # Kernel inputs in, outputs out; HBM stays inside the module
@@ -315,7 +329,8 @@ def kernel_prologue(hbm_size, inputs, constants):
         nbytes, byte_dims = spec_bytes(spec)
         byte_t, flat_t = spec_mlir_type(byte_dims, np.uint8), mlir_type(f'u8[{nbytes}]')
         params.append(f'%arg{i}: {arg_t}')
-        lines.append(f'%hbm.b{i} = stablehlo.bitcast_convert %arg{i} : ({arg_t}) -> {byte_t}')
+        cast = byte_cast(spec['dtype'])
+        lines.append(f'%hbm.b{i} = stablehlo.{cast} %arg{i} : ({arg_t}) -> {byte_t}')
         lines.append(f'%hbm.f{i} = stablehlo.reshape %hbm.b{i} : ({byte_t}) -> {flat_t}')
         pieces.append((int(spec['addr']), nbytes, f'%hbm.f{i}', flat_t))
 
@@ -357,7 +372,8 @@ def kernel_epilogue(hbm_loc, outputs, ssa_types):
             f'%out.s{i} = stablehlo.slice {hbm_loc} [{addr}:{addr + nbytes}:1] : ({ssa_types[hbm_loc]}) -> {flat_t}'
         )
         lines.append(f'%out.r{i} = stablehlo.reshape %out.s{i} : ({flat_t}) -> {byte_t}')
-        lines.append(f'%out.o{i} = stablehlo.bitcast_convert %out.r{i} : ({byte_t}) -> {out_t}')
+        cast = byte_cast(spec['dtype'])
+        lines.append(f'%out.o{i} = stablehlo.{cast} %out.r{i} : ({byte_t}) -> {out_t}')
         names.append(f'%out.o{i}')
         types.append(out_t)
     return lines, names, types
