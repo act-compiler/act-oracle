@@ -7,96 +7,152 @@ import re
 
 import numpy as np
 
-
-def parse_simple_expression(expression):
-    expression = expression.replace(' ', '')
-    if not expression:
-        return [(0, [], [])]
-
-    terms = []
-
-    parts = re.split(r'([+-])', expression)
-
-    current_sign = 1
-
-    for part in parts:
-        if part == '+':
-            current_sign = 1
-        elif part == '-':
-            current_sign = -1
-        elif part:
-            # The term only has mult and division
-            coeff, mult_vars, div_vars = parse_term(part)
-            terms.append((current_sign * coeff, mult_vars, div_vars))
-    return terms if terms else [(0, [], [])]
+# A loop expression's tokens, any other character last
+LOOP_TOKEN = re.compile(r'0|[1-9][0-9]*|%[A-Za-z_][A-Za-z0-9_]*|[-+*/%()]|\S')
 
 
-def parse_term(term):
-    parts = re.split(r'([*/])', term)
-
-    coeff = 1
-    mult_vars = []
-    div_vars = []
-
-    i = 0
-    while i < len(parts):
-        if i % 2 == 0:
-            val = parts[i]
-            if val.isdigit():
-                num = int(val)
-                if i == 0:
-                    coeff = num
-                else:
-                    op = parts[i - 1]
-                    if op == '*':
-                        coeff *= num
-                    elif op == '/':
-                        coeff = int(coeff / num)
-            elif val.startswith('%'):
-                if i == 0:
-                    mult_vars.append(val)
-                else:
-                    op = parts[i - 1]
-                    if op == '*':
-                        mult_vars.append(val)
-                    elif op == '/':
-                        div_vars.append(val)
-            else:
-                raise ValueError(f'unknown token {val!r} in a loop expression')
-        i += 1
-    return coeff, mult_vars, div_vars
+def merge(terms):
+    """A value's terms, like terms summed and zero terms dropped"""
+    sums = {}
+    for atoms, coeff in terms:
+        sums[atoms] = sums.get(atoms, 0) + coeff
+    return tuple((atoms, coeff) for atoms, coeff in sums.items() if coeff)
 
 
-def generate_loop_eq_vars(expression, global_counters):
-    terms = parse_simple_expression(expression)
+def literal(number):
+    """A value of one integer"""
+    return merge([((), number)])
+
+
+def multiply(a, b):
+    """a * b, each term of a times each of b"""
+    return merge(
+        (atoms_a + atoms_b, coeff_a * coeff_b) for atoms_a, coeff_a in a for atoms_b, coeff_b in b
+    )
+
+
+def constant(value):
+    """A value's integer, or None if it reads a loop variable"""
+    if any(atoms for atoms, _ in value):
+        return None
+    return sum(coeff for _, coeff in value)
+
+
+def divide(operator, a, b):
+    """a / b or a % b, floored as the language floors"""
+    divisor = constant(b)
+    if divisor is not None and constant(a) is not None:
+        return literal(constant(a) // divisor if operator == '/' else constant(a) % divisor)
+    # Every coefficient a multiple of the divisor: an exact quotient
+    if divisor is not None and all(coeff % divisor == 0 for _, coeff in a):
+        return merge((atoms, coeff // divisor) for atoms, coeff in a) if operator == '/' else ()
+    return ((((operator, a, b),), 1),)
+
+
+def read_loop_expression(instruction, name, expression, loop_stack):
+    """A call's loop expression as terms, each a coefficient and its atoms.
+
+    An atom is a loop variable or a quotient (operator, a, b) of two values.
+    """
+    tokens = LOOP_TOKEN.findall(expression) + ['']
+    held = {loop['var'] for loop in loop_stack}
+    unreadable = ValueError(f'{instruction}: {name} {expression!r} is not a loop expression')
+    at = 0
+
+    def take():
+        nonlocal at
+        at += 1
+        return tokens[at - 1]
+
+    # The language's precedence, each operator grouping from the left
+    def additive():
+        value = multiplicative()
+        while tokens[at] in ('+', '-'):
+            sign = -1 if take() == '-' else 1
+            value = merge(value + multiply(literal(sign), multiplicative()))
+        return value
+
+    def multiplicative():
+        value = unary()
+        while tokens[at] in ('*', '/', '%'):
+            operator = take()
+            operand = unary()
+            value = (
+                multiply(value, operand) if operator == '*' else divide(operator, value, operand)
+            )
+        return value
+
+    def unary():
+        if tokens[at] == '-':
+            take()
+            return multiply(literal(-1), unary())
+        return primary()
+
+    def primary():
+        token = take()
+        if token == '(':
+            value = additive()
+            if take() != ')':
+                raise unreadable
+            return value
+        if token.isascii() and token.isdigit():
+            return literal(int(token))
+        if token in held:
+            return (((token,), 1),)
+        # A % followed by a name is a loop variable
+        if len(token) > 1 and token[0] == '%':
+            raise ValueError(
+                f'{instruction}: {name} {expression!r} reads {token}, which no enclosing loop holds'
+            )
+        raise unreadable
+
+    value = additive()
+    if tokens[at]:
+        raise unreadable
+    return value
+
+
+def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
+    """StableHLO lines computing a call's loop expression, and its SSA name"""
     final_name = f'%loop_final.{global_counters["loop_var"]}'
     lines = []
 
-    def make_operand(k, coeff, mult_vars, div_vars):
-        result = f'{final_name}.c{k}'
-        lines.append(f'{result} = stablehlo.constant dense<{int(coeff)}> : tensor<i64>')
-        for n, var in enumerate(mult_vars):
-            lines.append(f'{result}.m{n} = stablehlo.multiply {result}, {var} : tensor<i64>')
-            result = f'{result}.m{n}'
-        for n, var in enumerate(div_vars):
-            lines.append(f'{result}.d{n} = stablehlo.divide {result}, {var} : tensor<i64>')
-            result = f'{result}.d{n}'
-        return result
+    def emit(value, prefix):
+        # Each term its coefficient times its atoms, then their sum
+        operands = []
+        for k, (atoms, coeff) in enumerate(value):
+            result = f'{prefix}.c{k}'
+            lines.append(f'{result} = stablehlo.constant dense<{coeff}> : tensor<i64>')
+            for n, atom in enumerate(atoms):
+                factor = atom if isinstance(atom, str) else emit_quotient(*atom, f'{result}.q{n}')
+                lines.append(f'{result}.m{n} = stablehlo.multiply {result}, {factor} : tensor<i64>')
+                result = f'{result}.m{n}'
+            operands.append(result)
+        if not operands:
+            lines.append(f'{prefix} = stablehlo.constant dense<0> : tensor<i64>')
+            return prefix
+        total = operands[0]
+        for n, operand in enumerate(operands[1:]):
+            lines.append(f'{prefix}.a{n} = stablehlo.add {total}, {operand} : tensor<i64>')
+            total = f'{prefix}.a{n}'
+        return total
 
-    operands = [
-        make_operand(k, coeff, mult_vars, div_vars)
-        for k, (coeff, mult_vars, div_vars) in enumerate(terms)
-        if coeff != 0
-    ]
+    def emit_quotient(operator, a, b, prefix):
+        # Floored from StableHLO's truncating remainder and divide
+        a, b = emit(a, f'{prefix}.n'), emit(b, f'{prefix}.d')
+        lines.append(f'{prefix}.t = stablehlo.remainder {a}, {b} : tensor<i64>')
+        lines.append(f'{prefix}.u = stablehlo.add {prefix}.t, {b} : tensor<i64>')
+        lines.append(f'{prefix}.r = stablehlo.remainder {prefix}.u, {b} : tensor<i64>')
+        if operator == '%':
+            return f'{prefix}.r'
+        lines.append(f'{prefix}.s = stablehlo.subtract {a}, {prefix}.r : tensor<i64>')
+        lines.append(f'{prefix} = stablehlo.divide {prefix}.s, {b} : tensor<i64>')
+        return prefix
 
-    if not operands:
-        return f'{final_name} = stablehlo.constant dense<0> : tensor<i64>\n', final_name
-
-    nested_adds = operands[0]
-    for n, operand in enumerate(operands[1:]):
-        lines.append(f'{final_name}.a{n} = stablehlo.add {nested_adds}, {operand} : tensor<i64>')
-        nested_adds = f'{final_name}.a{n}'
-    lines.append(f'{final_name} = stablehlo.reshape {nested_adds} : (tensor<i64>) -> tensor<i64>')
+    value = read_loop_expression(instruction, name, expression, loop_stack)
+    total = emit(value, final_name)
+    if total != final_name:
+        lines.append(f'{final_name} = stablehlo.reshape {total} : (tensor<i64>) -> tensor<i64>')
     return '\n'.join(lines) + '\n', final_name
 
 

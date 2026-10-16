@@ -362,16 +362,29 @@ def looped():
     return k
 
 
-def test_unknown_loop_expression_token_refused():
+# Each loop expression the oracle cannot read
+@pytest.mark.parametrize(
+    'expression, message',
+    [
+        ('(%i + 1 * 1024', "load_rm: addr_in '(%i + 1 * 1024' is not a loop expression"),
+        ('0.5 * %i * 4096', "load_rm: addr_in '0.5 * %i * 4096' is not a loop expression"),
+        ('abc', "load_rm: addr_in 'abc' is not a loop expression"),
+        ('', "load_rm: addr_in '' is not a loop expression"),
+        ('1024 * %k', "load_rm: addr_in '1024 * %k' reads %k, which no enclosing loop holds"),
+    ],
+    ids=['bracket', 'fraction', 'name', 'empty', 'variable'],
+)
+def test_unreadable_loop_expression_refused(expression, message):
     @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
     def k():
         api.start_loop('i', 0, 2)
-        api.load_rm(n=8, addr_in='(%i + 1) * 1024', addr_out='8 * %i')
+        api.load_rm(n=8, addr_in=expression, addr_out='8 * %i')
         api.end_loop()
         api.store_rm(n=64, addr_in=0, addr_out=24576)
 
-    with pytest.raises(ValueError, match="unknown token '\\(%i' in a loop expression"):
+    with pytest.raises(ValueError) as refusal:
         k('fsim-compile')
+    assert str(refusal.value) == message
 
 
 def nested():
@@ -408,7 +421,77 @@ def nested():
     return k
 
 
-@pytest.mark.parametrize('twin', [looped, nested])
+def q_looped(load_q):
+    """The attention kernel with its Q load in load_q's loops"""
+
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        load_q()
+        api.load_cm(n=64, addr_in=8192, addr_out=64)
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.softmax(n=64, addr=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.load_rm(n=64, addr_in=16384, addr_out=64)
+        api.gemm(addr_1=0, addr_2=64, addr_out=0)
+        api.mov(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    return k
+
+
+def bracketed():
+    """Q's quarters at bracketed addresses"""
+
+    def load_q():
+        api.start_loop('i', 0, 4)
+        api.load_rm(n=16, addr_in='2048 * (%i + 1) - 2048', addr_out='16 * (3 - (3 - %i))')
+        api.end_loop()
+
+    return q_looped(load_q)
+
+
+def floored():
+    """Q's quarters at floor quotients of negative numerators"""
+
+    def load_q():
+        api.start_loop('i', 0, 4)
+        api.load_rm(n=16, addr_in='(2 * %i - 7) / 2 * 2048 + 8192', addr_out='16 * %i')
+        api.end_loop()
+
+    return q_looped(load_q)
+
+
+def remaindered():
+    """Q's eighths at quotients and remainders of the loop variable"""
+
+    def load_q():
+        api.start_loop('i', 0, 8)
+        api.load_rm(
+            n=8, addr_in='%i / 2 * 2048 + (%i - 8) % 2 * 1024', addr_out='%i / 2 * 16 + %i % 2 * 8'
+        )
+        api.end_loop()
+
+    return q_looped(load_q)
+
+
+def nested_divided():
+    """Q's eighths at expressions over both of two loops' variables"""
+
+    def load_q():
+        api.start_loop('j', 0, 2)
+        api.start_loop('i', 0, 4)
+        api.load_rm(
+            n=8,
+            addr_in='(%i + 4 * %j) * (%j + 1) / (%j + 1) * 1024',
+            addr_out='(%i + 4 * %j + 8) % 8 * 8',
+        )
+        api.end_loop()
+        api.end_loop()
+
+    return q_looped(load_q)
+
+
+@pytest.mark.parametrize('twin', [looped, nested, bracketed, floored, remaindered, nested_divided])
 def test_loop_matches_unrolled(twin):
     k = twin()
     k('fsim-compile')()

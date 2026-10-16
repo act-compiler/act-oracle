@@ -208,7 +208,9 @@ for name, arg in comp_attrs.items():
 try:
     for name, arg in attrs.items():
         if isinstance(arg, str):
-            expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
+            expr_lines, new_name = generate_loop_eq_vars(
+                {{name}}, name, arg, loop_stack, global_counters
+            )
             output.append(expr_lines)
             attrs[name] = new_name
             global_counters['loop_var'] += 1
