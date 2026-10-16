@@ -198,18 +198,23 @@ attrs = {{set_attributes}}
 # Each value an int or a loop expression
 comp_attrs = check_values({{name}}, comp_attrs)
 attrs = check_values({{name}}, attrs)
+# The call's values, named by a refusal
+values = comp_attrs | attrs
 output = []
-for name, arg in attrs.items():
-    if isinstance(arg, str):
-        expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
-        output.append(expr_lines)
-        attrs[name] = new_name
-        global_counters['loop_var'] += 1
-
 for name, arg in comp_attrs.items():
     if isinstance(arg, str):
         raise TypeError('Loop expressions are not supported for computation attributes')
+# Its expressions evaluated, a division by zero named
+try:
+    for name, arg in attrs.items():
+        if isinstance(arg, str):
+            expr_lines, new_name = generate_loop_eq_vars(arg, global_counters)
+            output.append(expr_lines)
+            attrs[name] = new_name
+            global_counters['loop_var'] += 1
 {{fsim_compile}}
+except ZeroDivisionError:
+    raise division_by_zero({{name}}, values) from None
 instruction_scopes[cur_scope] += output
 global_counters['instruction_counter'] += 1
 

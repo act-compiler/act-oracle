@@ -964,3 +964,50 @@ def test_narrow_value_of_part_bytes_refused(t, shape):
     assert str(refusal.value) == (
         f"input 0 of kernel 'k': {count} elements of {name} do not fill whole bytes"
     )
+
+
+# Loads whose start divides by a computational attribute
+divide = Accelerator('DIVIDE', base_dir=tempfile.mkdtemp())
+divide.add_data_model('d1', [1], [8], 'u8')
+for name, operator in (('load_quotient', '/'), ('load_remainder', '%')):
+    instr = divide.add_instruction(name, ['n'], ['src'])
+    instr.set_inputs([['d0', [f'@a.src {operator} @c.n'], ['8']]])
+    instr.set_outputs([['d1', ['0'], ['1']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[8] parameter(0);
+    ROOT %Out0 = u8[1,8] reshape(%In0);
+}
+""")
+# An instruction with no region and no semantics
+divide.add_instruction('fence', [], [])
+generate_oracle(divide)
+divide_kernel, divide_api = import_oracle(
+    os.path.join(divide.base_dir, 'targets', 'DIVIDE'), 'oracle_DIVIDE'
+)
+
+
+@pytest.mark.parametrize('name', ['load_quotient', 'load_remainder'])
+def test_division_by_zero_refused(name):
+    @divide_kernel.kernel(
+        hbm=16, input=[{'addr': 0, 'shape': (16,), 'dtype': np.uint8}], constant=[], output=[]
+    )
+    def k():
+        getattr(divide_api, name)(n=0, src=8)
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'{name}: an expression divides by zero with n=0, src=8'
+
+
+def test_instruction_without_regions_runs():
+    hbm = [{'addr': 0, 'shape': (16,), 'dtype': np.uint8}]
+
+    @divide_kernel.kernel(hbm=16, input=hbm, constant=[], output=hbm)
+    def k():
+        divide_api.fence()
+
+    x = np.arange(16, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x)

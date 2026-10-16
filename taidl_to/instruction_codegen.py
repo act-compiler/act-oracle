@@ -93,7 +93,8 @@ def generate_api_function(instruction: Instruction) -> str:
         parts.append(semantics)
     if outputs:
         parts.append(outputs)
-    fsim_compile = '\n'.join(parts)
+    # Its body indented under the template's try
+    fsim_compile = indent_code('\n'.join(parts))
 
     output = generate_code(
         templates['API_FUNC'],

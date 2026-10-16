@@ -114,6 +114,12 @@ def check_values(instruction, values):
     return {name: value if isinstance(value, str) else int(value) for name, value in values.items()}
 
 
+def division_by_zero(instruction, values):
+    """The refusal of a call whose expression divides by zero"""
+    shown = ', '.join(f'{name}={value!r}' for name, value in values.items())
+    return ValueError(f'{instruction}: an expression divides by zero with {shown}')
+
+
 def lhs_util(global_counters, lhs_name, lhs_vartype='', lhs_dim=()):
     if lhs_name in global_counters:
         global_counters[lhs_name]['counter'] += 1
