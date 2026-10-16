@@ -1,5 +1,8 @@
 """Code generation of each instruction's API function, which traces its StableHLO"""
 
+import ast
+from collections import Counter
+
 from taidl import Instruction
 
 from .expression_writer import python
@@ -64,13 +67,6 @@ def generate_api_function(instruction: Instruction) -> str:
     attr_list = ', '.join(instruction.comp_attr + instruction.parameters)
     func_name = instruction.instruction
 
-    # Refuse an attribute shadowing one
-    for attr in instruction.comp_attr + instruction.parameters:
-        if attr in SHARED_NAMES:
-            raise NotImplementedError(
-                f"{func_name}: attribute name '{attr}' is reserved by the oracle"
-            )
-
     if instruction.update:
         raise NotImplementedError(
             f"{func_name}: state update '{instruction.update[0]}' is not supported by the oracle"
@@ -111,4 +107,29 @@ def generate_api_function(instruction: Instruction) -> str:
     func_def = f'\n\ndef {func_name}({attr_list}) -> None:\n'
     output = layout(func_def + indent_code(output))
 
+    # Refuse an attribute named as one the oracle reserves
+    clash = clashing(output, instruction.comp_attr + instruction.parameters)
+    if clash:
+        raise NotImplementedError(
+            f"{func_name}: attribute name '{clash[0]}' is reserved by the oracle"
+        )
+
     return output
+
+
+def python_name(name: str) -> bool:
+    """Whether a name is one of Python's own, as __debug__ is."""
+    return name.startswith('__') and name.endswith('__')
+
+
+def clashing(function: str, attributes: list[str]) -> list[str]:
+    """The attributes named as Python's own, a shared name or a name the function reads."""
+    names = [node for node in ast.walk(ast.parse(function)) if isinstance(node, ast.Name)]
+    loads = Counter(node.id for node in names if isinstance(node.ctx, ast.Load))
+    stores = {node.id for node in names if isinstance(node.ctx, ast.Store)}
+    # An attribute is read once; a local is written first
+    return [
+        attr
+        for attr in attributes
+        if python_name(attr) or attr in SHARED_NAMES or (loads[attr] > 1 and attr not in stores)
+    ]

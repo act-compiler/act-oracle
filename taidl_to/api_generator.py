@@ -1,7 +1,14 @@
 """API file generator for Oracle"""
 
-from .instruction_codegen import generate_api_function
+import ast
+import os
+import symtable
+
+from .instruction_codegen import generate_api_function, python_name
 from .template import dict_text, generate_code, indent_code, layout, templates
+
+# The decorator, which reads and sets names of api.py
+DECORATOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generic', 'decorator.py')
 
 
 def generate_semantic_init(data_models):
@@ -36,12 +43,44 @@ def generate_api_file(instructions, state, data_models) -> str:
     for variable in state:
         state_str += "'" + variable.name + "': " + str(variable.value) + ',\n'
 
-    output = generate_code(
+    head = generate_code(
         templates['API_FILE'],
         {'state': dict_text(state_str), 'semantic_init': semantic_init},
     )
+    functions = [generate_api_function(instruction) for instruction in instructions]
 
-    for instruction in instructions:
-        output += generate_api_function(instruction)
+    # Refuse an instruction named as Python's or api.py's own
+    names = [instruction.instruction for instruction in instructions]
+    clash = [name for name in names if python_name(name)]
+    if not clash:
+        reserved = reserved_names(head, functions)
+        clash = [name for name in names if name in reserved]
+    if clash:
+        raise NotImplementedError(
+            f"{clash[0]}: instruction name '{clash[0]}' is reserved by the oracle"
+        )
 
-    return output
+    return head + ''.join(functions)
+
+
+def reserved_names(head: str, functions: list[str]) -> set[str]:
+    """What api.py keeps: its head's names, its functions' globals and the decorator's api names."""
+    names = {
+        symbol.get_name() for symbol in symtable.symtable(head, 'api.py', 'exec').get_symbols()
+    }
+    tables = [symtable.symtable(head + ''.join(functions), 'api.py', 'exec')]
+    while tables:
+        table = tables.pop()
+        if table.get_type() == 'function':
+            names |= {symbol.get_name() for symbol in table.get_symbols() if symbol.is_global()}
+        tables += table.get_children()
+    with open(DECORATOR) as file:
+        tree = ast.parse(file.read())
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == 'api'
+        ):
+            names.add(node.attr)
+    return names

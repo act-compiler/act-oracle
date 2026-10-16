@@ -263,21 +263,47 @@ SHARED_NAMES = [
     'state',
 ]
 
+# Names the generated oracle keeps, by what the spec names
+RESERVED = [(kind, name) for kind in ('attribute', 'addressing') for name in SHARED_NAMES] + [
+    ('instruction', 'debug'),
+    ('instruction', 'state'),
+    ('instruction', 'str'),
+    ('instruction', 'compile_time'),
+    ('instruction', '__debug__'),
+    ('attribute', 'str'),
+    ('attribute', '__debug__'),
+    ('data model', 'loop_var'),
+    ('data model', 'debug_slice'),
+    ('data model', 'In0'),
+    ('value', 'd0'),
+    ('value', 'instruction_counter'),
+]
 
-@pytest.mark.parametrize('addressing', [False, True])
-@pytest.mark.parametrize('name', SHARED_NAMES)
-def test_attribute_named_as_a_shared_name_refused(name, addressing):
+
+@pytest.mark.parametrize('kind, name', RESERVED)
+def test_reserved_name_refused(kind, name):
     acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    # The name as a computation or an addressing attribute
-    attributes = ([], [name, 'addr']) if addressing else ([name], ['addr'])
-    instr = acc.add_instruction('refused', *attributes)
+    if kind == 'data model':
+        acc.add_data_model(name, [4], [2], 'u8')
+    instruction = name if kind == 'instruction' else 'refused'
+    # An attribute's name as a computation or an addressing attribute
+    computation = [name] if kind == 'attribute' else []
+    addressing = [name, 'addr'] if kind == 'addressing' else ['addr']
+    instr = acc.add_instruction(instruction, computation, addressing)
     instr.set_inputs([['d0', ['@a.addr'], ['2']]])
     instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY {
+    value = f'%{name}' if kind == 'value' else '%a'
+    instr.add_semantics(f"""
+ENTRY {{
     %In0 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] copy(%In0);
-}
+    {value} = u8[2] copy(%In0);
+    ROOT %Out0 = u8[2] copy({value});
+}}
 """)
-    with pytest.raises(NotImplementedError, match=f"refused: attribute name '{name}' is reserved"):
+    shown = value if kind == 'value' else name
+    # A data model owns its refusal, else the instruction
+    owner = name if kind == 'data model' else instruction
+    named = 'attribute' if kind == 'addressing' else kind
+    message = f"^{owner}: {named} name '{shown}' is reserved by the oracle$"
+    with pytest.raises(NotImplementedError, match=message):
         generate_oracle(acc)
