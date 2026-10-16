@@ -212,8 +212,8 @@ try:
             attrs[name] = new_name
             global_counters['loop_var'] += 1
 {{fsim_compile}}
-except ZeroDivisionError:
-    raise division_by_zero({{name}}, values) from None
+except ZeroDivisionError as error:
+    raise division_by_zero({{name}}, values, error) from None
 instruction_scopes[cur_scope] += output
 global_counters['instruction_counter'] += 1
 

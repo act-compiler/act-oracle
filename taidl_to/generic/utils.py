@@ -1,6 +1,7 @@
 """What a generated api.py traces and checks with:
 loop expressions, checks, SSA names, types, emitters"""
 
+import itertools
 import math
 import numbers
 import re
@@ -38,8 +39,37 @@ def constant(value):
     return sum(coeff for _, coeff in value)
 
 
-def divide(operator, a, b):
+def variables(value):
+    """The loop variables a value reads"""
+    found = set()
+    for atoms, _ in value:
+        for atom in atoms:
+            found |= {atom} if isinstance(atom, str) else variables(atom[1]) | variables(atom[2])
+    return found
+
+
+def evaluate(value, env):
+    """A value's integer at env's loop variable values"""
+    total = 0
+    for atoms, coeff in value:
+        for atom in atoms:
+            if isinstance(atom, str):
+                coeff *= env[atom]
+            else:
+                a, b = evaluate(atom[1], env), evaluate(atom[2], env)
+                coeff *= a // b if atom[0] == '/' else a % b
+        total += coeff
+    return total
+
+
+def divide(operator, a, b, loops):
     """a / b or a % b, floored as the language floors"""
+    # Refuse a divisor zero at any iteration, naming it
+    names = [var for var in loops if var in variables(b)]
+    for point in itertools.product(*(loops[var] for var in names)):
+        env = dict(zip(names, point))
+        if evaluate(b, env) == 0:
+            raise ZeroDivisionError(env)
     divisor = constant(b)
     if divisor is not None and constant(a) is not None:
         return literal(constant(a) // divisor if operator == '/' else constant(a) % divisor)
@@ -55,7 +85,7 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     An atom is a loop variable or a quotient (operator, a, b) of two values.
     """
     tokens = LOOP_TOKEN.findall(expression) + ['']
-    held = {loop['var'] for loop in loop_stack}
+    loops = {loop['var']: range(loop['start'], loop['end']) for loop in loop_stack}
     unreadable = ValueError(f'{instruction}: {name} {expression!r} is not a loop expression')
     at = 0
 
@@ -78,7 +108,9 @@ def read_loop_expression(instruction, name, expression, loop_stack):
             operator = take()
             operand = unary()
             value = (
-                multiply(value, operand) if operator == '*' else divide(operator, value, operand)
+                multiply(value, operand)
+                if operator == '*'
+                else divide(operator, value, operand, loops)
             )
         return value
 
@@ -97,7 +129,7 @@ def read_loop_expression(instruction, name, expression, loop_stack):
             return value
         if token.isascii() and token.isdigit():
             return literal(int(token))
-        if token in held:
+        if token in loops:
             return (((token,), 1),)
         # A % followed by a name is a loop variable
         if len(token) > 1 and token[0] == '%':
@@ -176,10 +208,16 @@ def check_values(instruction, values, computational=False):
     return {name: value if isinstance(value, str) else int(value) for name, value in values.items()}
 
 
-def division_by_zero(instruction, values):
-    """The refusal of a call whose expression divides by zero"""
+def division_by_zero(instruction, values, error):
+    """The refusal of error, a call's division by zero, its values and iteration named"""
     shown = ', '.join(f'{name}={value!r}' for name, value in values.items())
-    return ValueError(f'{instruction}: an expression divides by zero with {shown}')
+    # A loop expression's divisor gives the iteration
+    env = error.args[0] if error.args and isinstance(error.args[0], dict) else {}
+    iteration = ', '.join(f'{var} = {at}' for var, at in env.items())
+    return ValueError(
+        f'{instruction}: an expression divides by zero with {shown}'
+        + (f' at {iteration}' if env else '')
+    )
 
 
 def lhs_util(global_counters, lhs_name, lhs_vartype='', lhs_dim=()):

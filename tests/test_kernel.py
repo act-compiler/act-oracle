@@ -390,6 +390,24 @@ def test_unreadable_loop_expression_refused(expression, message):
     assert str(refusal.value) == message
 
 
+# A divisor zero as written or at an iteration, that one named
+@pytest.mark.parametrize(
+    'expression, iteration', [('%i / 0', ''), ('%i % (2 - 2)', ''), ('4096 / %i', ' at %i = 0')]
+)
+def test_loop_expression_division_by_zero_refused(expression, iteration):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.start_loop('i', 0, 2)
+        api.load_rm(n=8, addr_in=expression, addr_out='8 * %i')
+        api.end_loop()
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    shown = f"n=8, addr_in={expression!r}, addr_out='8 * %i'"
+    assert str(refusal.value) == f'load_rm: an expression divides by zero with {shown}{iteration}'
+
+
 def nested():
     """The attention kernel with its Q and V loads in two-deep loops"""
 
