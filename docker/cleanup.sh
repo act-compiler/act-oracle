@@ -5,6 +5,25 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source act.env
 
+usage() {
+  echo "Usage: $0 [-h|--help]"
+}
+
+# Any argument but --help is refused
+for arg in "$@"; do
+  case "$arg" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
 # Pick the cuda13 image on a GPU host
 VARIANT=""
 if nvidia-smi >/dev/null 2>&1 &&
@@ -20,12 +39,13 @@ if [ "$ARCH" = "x86_64" ]; then
 elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
   IMAGE_NAME="devanshdvj/act-env:${ACT_ENV_TAG}${VARIANT}-arm64"
 else
-  echo "Error: Unsupported architecture: $ARCH"
+  echo "Error: Unsupported architecture: $ARCH" >&2
   exit 1
 fi
 
 # collect candidate containers (all containers using the image)
-mapfile -t CONTAINERS < <(docker ps -a --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | awk -v img="${IMAGE_NAME}" '$3 == img')
+LISTED=$(docker ps -a --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}')
+mapfile -t CONTAINERS < <(awk -v img="${IMAGE_NAME}" '$3 == img' <<<"${LISTED}")
 
 NUM_CONTAINERS=${#CONTAINERS[@]}
 if [ ${NUM_CONTAINERS} -eq 0 ]; then
@@ -45,7 +65,7 @@ for line in "${CONTAINERS[@]}"; do
   case "${RESP}" in
     y | Y)
       echo "Removing ${CNAME}..."
-      docker rm -f "${CID}" || { echo "Failed to remove ${CNAME}"; }
+      docker rm -f "${CID}"
       ;;
     *)
       echo "Keeping ${CNAME}."

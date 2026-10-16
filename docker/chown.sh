@@ -11,7 +11,8 @@ UID_N="$(id -u)"
 GID_N="$(id -g)"
 
 # Remove any previous leftover taidl-to-chown container
-if docker ps -a --format '{{.Names}}' | grep -xq "${CHOWN_CONTAINER_NAME}"; then
+LISTED=$(docker ps -a --format '{{.Names}}')
+if grep -xq "${CHOWN_CONTAINER_NAME}" <<<"${LISTED}"; then
   echo "Removing existing leftover container named ${CHOWN_CONTAINER_NAME}..."
   docker rm -f ${CHOWN_CONTAINER_NAME} >/dev/null 2>&1
 fi
@@ -20,6 +21,6 @@ fi
 docker run --rm --name "${CHOWN_CONTAINER_NAME}" \
   -v "$(pwd)/..:${CONTAINER_MOUNT}:rw" \
   busybox:1.36 \
-  sh -c "chown -R ${UID_N}:${GID_N} ${CONTAINER_MOUNT} || (echo \"Failed to change ownership.\" && exit 1)"
+  sh -c "chown -R ${UID_N}:${GID_N} ${CONTAINER_MOUNT} || (echo \"Failed to change ownership.\" >&2 && exit 1)"
 
 echo "Ownership changed successfully."

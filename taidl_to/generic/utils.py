@@ -56,6 +56,8 @@ def parse_term(term):
                         mult_vars.append(val)
                     elif op == '/':
                         div_vars.append(val)
+            else:
+                raise ValueError(f'unknown token {val!r} in a loop expression')
         i += 1
     return coeff, mult_vars, div_vars
 

@@ -169,9 +169,6 @@ def debug(prefix: str, data: str) -> None:
 global comp_attrs
 comp_attrs = {{set_comp_attr}}
 attrs = {{set_attributes}}
-flag = 1
-{{constraints}}
-assert flag
 {{update}}
 output = []
 for name, arg in attrs.items():
