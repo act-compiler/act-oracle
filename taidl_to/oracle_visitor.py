@@ -4,7 +4,7 @@ import re
 
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
-from .expression_writer import integer, python
+from .expression_writer import integer
 from .generic.shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement, known, numbers
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
 from .template import generate_code, templates
@@ -199,6 +199,8 @@ class OracleVisitor(IDLV2Visitor):
         self.values = {}
         # Each value's dims as Python, evaluated at the call
         self.dims = {}
+        # Whether a looped value is held to one value over its loop
+        self.holding = True
         self.instruction_lines = []
 
         # Each word's template, the generic one where none is named
@@ -263,6 +265,10 @@ class OracleVisitor(IDLV2Visitor):
             attribute_info = self.visit(ctx.attributes())
             for attr_name, attr_value in attribute_info:
                 attributes[attr_name] = attr_value
+        # The attributes as the call gives them, a looped value not held
+        self.holding = False
+        given = dict(self.visit(ctx.attributes())) if ctx.attributes() else {}
+        self.holding = True
 
         # A compare's type fits its operands'
         kind = attributes.get('type') if op_name == 'compare' else None
@@ -275,13 +281,13 @@ class OracleVisitor(IDLV2Visitor):
 
         # Refuse a line whose shapes or attributes disagree
         operands = [(f"'%{name}'", self.values[name]) for name in values]
-        reason = disagreement(op_name, self.values[lhs_name], operands, attributes)
+        reason = disagreement(op_name, self.values[lhs_name], operands, given)
         if reason:
             raise ValueError(f"{self.instruction}: {op_name} of '%{lhs_name}' {reason}")
         # A line shaped by the call's values is checked at the call
         lines = [self.values[name] for name in [lhs_name, *values]]
-        if not literal(lines, attributes):
-            self.check_shapes(op_name, lhs_name, values, attributes)
+        if not literal(lines, given):
+            self.check_shapes(op_name, lhs_name, values, given)
 
         self.generate_from_template(
             op_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
@@ -361,7 +367,7 @@ class OracleVisitor(IDLV2Visitor):
         """A constant's literal as Python, checked against typ here; an expression at the call"""
         text = value.getText()
         if value.EXPRESSION():
-            return python(self.expressions[value.EXPRESSION()])
+            return integer(value, self.expressions, self.instruction)
         if value.IDENTIFIER():
             literal = text == 'true'
         elif re.fullmatch(r'-?[0-9]+', text):
@@ -374,6 +380,10 @@ class OracleVisitor(IDLV2Visitor):
             raise type(error)(f'{self.instruction}: constant {error}') from None
         # The spec's own text, which inf and nan need
         return f"float('{text}')" if isinstance(literal, float) else repr(literal)
+
+    def integer(self, ctx):
+        """An integer as Python, a looped value held unless holding is off"""
+        return integer(ctx, self.expressions, self.instruction if self.holding else None)
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.name().getText()
@@ -404,14 +414,14 @@ class OracleVisitor(IDLV2Visitor):
         return str(int(text)) if re.fullmatch(r'-?[0-9]+', text) else text
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
-        return [integer(value_ctx, self.expressions) for value_ctx in ctx.value()]
+        return [self.integer(value_ctx) for value_ctx in ctx.value()]
 
     def visitSlice_list(self, ctx: IDLV2Parser.Slice_listContext):
         """Each range's start, limit and stride, the stride 1 unless given"""
         ranges, bounds = [], []
         for child in ctx.getChildren():
             if isinstance(child, IDLV2Parser.ValueContext):
-                bounds.append(integer(child, self.expressions))
+                bounds.append(self.integer(child))
             elif child.getText() == ']':
                 ranges.append((*bounds, '1')[:3])
                 bounds = []
@@ -432,7 +442,7 @@ class OracleVisitor(IDLV2Visitor):
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
-        dims = [integer(dim, self.expressions) for dim in ctx.dim()]
+        dims = [self.integer(dim) for dim in ctx.dim()]
         typ = ctx.parentCtx.TYPE().getText()
         return (', '.join(dims), typ)
 

@@ -43,14 +43,33 @@ class ExpressionWriter(IDLV2ExprVisitor):
         return f"{TABLES[text[:3]]}['{text[3:]}']"
 
 
+class References(IDLV2ExprVisitor):
+    """The references a value reads, as written."""
+
+    def defaultResult(self):
+        return []
+
+    def aggregateResult(self, aggregate, nextResult):
+        return aggregate + nextResult
+
+    def visitReference(self, ctx: IDLV2ExprParser.ReferenceContext):
+        return [ctx.getText()]
+
+
 def python(tree: IDLV2ExprParser.ExpressionContext) -> str:
     """The Python that computes a value."""
     return ExpressionWriter().visit(tree)
 
 
-def integer(ctx, expressions) -> str:
-    """An integer as Python: a literal's value, or an expression evaluated at each call."""
+def integer(ctx, expressions, instruction=None) -> str:
+    """An integer as Python: a literal's value, or an expression evaluated at each call and,
+    given its instruction, held to one value over its loop."""
     if ctx.EXPRESSION():
-        return python(expressions[ctx.EXPRESSION()])
+        tree = expressions[ctx.EXPRESSION()]
+        read = [ref[3:] for ref in References().visit(tree) if ref.startswith('@a.')]
+        if instruction is None or not read:
+            return python(tree)
+        given = ', '.join(f"'{name}': values['{name}']" for name in dict.fromkeys(read))
+        return f'fixed({instruction!r}, {ctx.getText()!r}, {python(tree)}, {{{given}}})'
     # Drop a literal's leading zeros, which Python refuses
     return str(int(ctx.getText()))

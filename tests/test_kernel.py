@@ -1549,6 +1549,13 @@ ENTRY {
     ROOT %Out0 = u8[8] slice(%In0), slice={[`@a.off`:`@a.off + 8`]};
 }
 """)
+instr = called.add_instruction('fill', [], ['v', 'dst'])
+instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    ROOT %Out0 = u8[8] constant(`@a.v`);
+}
+""")
 generate_oracle(called)
 called_kernel, called_api = import_oracle(
     os.path.join(called.base_dir, 'targets', 'CALLED'), 'oracle_CALLED'
@@ -1610,6 +1617,59 @@ def slid_past():
     ids=['elementwise', 'dot', 'looped'],
 )
 def test_shapes_disagreeing_at_the_call_refused(body, message):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        body()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message
+
+
+# A slice at one offset over its loop, against its unrolled twin
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
+def test_looped_value_of_one_integer_in_a_semantics_runs(looped):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        if looped:
+            called_api.start_loop('i', 0, 2)
+            called_api.slide(src=0, off='4 + %i / 2', dst='32 + 8 * %i')
+            called_api.end_loop()
+        else:
+            for i in range(2):
+                called_api.slide(src=0, off=4, dst=32 + 8 * i)
+
+    x = np.arange(32, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), np.tile(x[4:12], 2))
+
+
+def slid():
+    called_api.start_loop('i', 0, 2)
+    called_api.slide(src=0, off='4 * %i', dst='32 + 8 * %i')
+    called_api.end_loop()
+
+
+def filled():
+    called_api.start_loop('i', 0, 2)
+    called_api.fill(v='%i', dst=32)
+    called_api.end_loop()
+
+
+# A looped value in a semantics that changes over its loop
+@pytest.mark.parametrize(
+    'body, message',
+    [
+        (
+            slid,
+            "slide: `@a.off` with off='4 * %i' changes over its loop: 0 at %i = 0 and 4 at %i = 1",
+        ),
+        (filled, "fill: `@a.v` with v='%i' changes over its loop: 0 at %i = 0 and 1 at %i = 1"),
+    ],
+    ids=['attribute', 'constant'],
+)
+def test_looped_value_changing_in_a_semantics_refused(body, message):
     @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
     def k():
         body()

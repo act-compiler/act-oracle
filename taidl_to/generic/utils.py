@@ -702,6 +702,26 @@ def tile_shape(tile, region):
     return [region[k] if isinstance(dim, LoopValue) else dim for k, dim in enumerate(tile)]
 
 
+def fixed(instruction, expression, value, given):
+    """A value's one integer over its loops, refused by name where it changes"""
+    if not isinstance(value, LoopValue):
+        return value
+    # The first iteration at which it takes each value
+    taken = {}
+    for env in iterations(value.value, value.loops):
+        taken.setdefault(evaluate(value.value, env), env)
+    if len(taken) > 1:
+        shown = ', '.join(f'{name}={arg!r}' for name, arg in given.items() if isinstance(arg, str))
+        changes = ' and '.join(
+            f'{at} at ' + ', '.join(f'{var} = {i}' for var, i in env.items())
+            for at, env in list(taken.items())[:2]
+        )
+        raise ValueError(
+            f'{instruction}: {expression} with {shown} changes over its loop: {changes}'
+        )
+    return next(iter(taken))
+
+
 def written(value):
     """An attribute as the shape checks read it, each integer its decimal text"""
     if isinstance(value, (list, tuple)):
