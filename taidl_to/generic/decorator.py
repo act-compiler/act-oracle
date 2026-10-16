@@ -60,7 +60,7 @@ def compile_module(module: str):
     return executable, device, elapsed
 
 
-def check_hbm(name, hbm, input, constant, output):
+def check_declaration(name, hbm, input, constant, output):
     # Every input, constant and output inside HBM
     pieces = {
         'input': [(spec['addr'], spec_bytes(spec)[0]) for spec in input],
@@ -151,7 +151,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 set_simulation_backend()
 
             if mode == 'fsim-compile':
-                check_hbm(func.__name__, hbm, input, constant, output)
+                check_declaration(func.__name__, hbm, input, constant, output)
                 reset_api()
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
