@@ -201,6 +201,43 @@ def test_loop_expression_as_computation_attribute_refused():
         k('fsim-compile')()
 
 
+# Each value a call may pass that is not an integer
+@pytest.mark.parametrize(
+    'values, message',
+    [
+        ({'addr_in': 0.5}, 'load_rm: addr_in 0.5 is not an integer'),
+        ({'addr_in': 8192.0}, 'load_rm: addr_in 8192.0 is not an integer'),
+        ({'addr_in': True}, 'load_rm: addr_in True is not an integer'),
+        ({'addr_in': np.bool_(True)}, 'load_rm: addr_in np.True_ is not an integer'),
+        ({'addr_out': [0]}, 'load_rm: addr_out [0] is not an integer'),
+        ({'n': 64.0}, 'load_rm: n 64.0 is not an integer'),
+    ],
+    ids=['fraction', 'float', 'bool', 'numpy_bool', 'list', 'computation'],
+)
+def test_non_integer_value_refused(values, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(**({'n': 64, 'addr_in': 0, 'addr_out': 0} | values))
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(TypeError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message
+
+
+# NumPy integers run as the ints they hold
+def test_numpy_integer_values_run():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=np.int64(64), addr_in=np.int32(8192), addr_out=np.uint8(0))
+        api.store_rm(n=np.int64(64), addr_in=np.int64(0), addr_out=np.int64(24576))
+
+    Q, K, V = load_qkv()
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(K).tobytes()
+
+
 def run_printing(kern, a, prefix, inputs):
     """Compile and run on inputs a kernel of oracle a that prints after prefix"""
 

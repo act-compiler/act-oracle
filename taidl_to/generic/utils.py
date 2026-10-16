@@ -1,6 +1,8 @@
-"""What a generated api.py traces with: loop expressions, SSA names, types, emitters"""
+"""What a generated api.py traces and checks with:
+loop expressions, checks, SSA names, types, emitters"""
 
 import math
+import numbers
 import re
 
 import numpy as np
@@ -96,6 +98,20 @@ def generate_loop_eq_vars(expression, global_counters):
         nested_adds = f'{final_name}.a{n}'
     lines.append(f'{final_name} = stablehlo.reshape {nested_adds} : (tensor<i64>) -> tensor<i64>')
     return '\n'.join(lines) + '\n', final_name
+
+
+def integral(value):
+    """Whether a value is a Python or NumPy integer, never a bool"""
+    return isinstance(value, numbers.Integral) and not isinstance(value, bool)
+
+
+def check_values(instruction, values):
+    """A call's values, each an int or a loop expression, refused by name if neither"""
+    for name, value in values.items():
+        if not integral(value) and not isinstance(value, str):
+            raise TypeError(f'{instruction}: {name} {value!r} is not an integer')
+    # A NumPy integer as an int
+    return {name: value if isinstance(value, str) else int(value) for name, value in values.items()}
 
 
 def lhs_util(global_counters, lhs_name, lhs_vartype='', lhs_dim=()):
