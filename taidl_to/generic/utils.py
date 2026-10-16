@@ -94,8 +94,58 @@ OPERATIONS = {
 }
 
 
+class LoopValue:
+    """A loop expression's value, which the language's arithmetic operators combine"""
+
+    def __init__(self, value, loops, name=None):
+        # Its terms, its loops' ranges, its SSA name once emitted
+        self.value, self.loops, self.name = value, loops, name
+
+    def combine(self, operator, other, reflected=False):
+        """self operator other, or other operator self if reflected"""
+        if isinstance(other, LoopValue):
+            other_value, loops = other.value, self.loops | other.loops
+        else:
+            other_value, loops = literal(other), self.loops
+        a, b = (other_value, self.value) if reflected else (self.value, other_value)
+        return LoopValue(OPERATIONS[operator](a, b, loops), loops)
+
+    def __add__(self, other):
+        return self.combine('+', other)
+
+    def __radd__(self, other):
+        return self.combine('+', other, True)
+
+    def __sub__(self, other):
+        return self.combine('-', other)
+
+    def __rsub__(self, other):
+        return self.combine('-', other, True)
+
+    def __mul__(self, other):
+        return self.combine('*', other)
+
+    def __rmul__(self, other):
+        return self.combine('*', other, True)
+
+    def __floordiv__(self, other):
+        return self.combine('/', other)
+
+    def __rfloordiv__(self, other):
+        return self.combine('/', other, True)
+
+    def __mod__(self, other):
+        return self.combine('%', other)
+
+    def __rmod__(self, other):
+        return self.combine('%', other, True)
+
+    def __neg__(self):
+        return self.combine('*', -1)
+
+
 def read_loop_expression(instruction, name, expression, loop_stack):
-    """A call's loop expression as terms, each a coefficient and its atoms.
+    """A call's loop expression as a LoopValue of terms, each a coefficient and its atoms.
 
     An atom is a loop variable or a quotient (operator, a, b) of two values.
     """
@@ -149,7 +199,7 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     value = additive()
     if tokens[at]:
         raise unreadable
-    return value
+    return LoopValue(value, loops)
 
 
 def value_lines(value, final_name):
@@ -195,10 +245,10 @@ def value_lines(value, final_name):
 
 
 def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
-    """StableHLO lines computing a call's loop expression, and its SSA name"""
-    final_name = f'%loop_final.{global_counters["loop_var"]}'
-    value = read_loop_expression(instruction, name, expression, loop_stack)
-    return '\n'.join(value_lines(value, final_name)) + '\n', final_name
+    """StableHLO lines computing a call's loop expression, and its LoopValue, named"""
+    read = read_loop_expression(instruction, name, expression, loop_stack)
+    read.name = f'%loop_final.{global_counters["loop_var"]}'
+    return '\n'.join(value_lines(read.value, read.name)) + '\n', read
 
 
 def integral(value):
@@ -527,19 +577,24 @@ def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
 
 
 def index_constants(lhs, starts):
-    """One tensor<i64> constant per literal index; a loop expression passes through"""
+    """One tensor<i64> per start: a literal's constant, or a loop value's SSA name"""
     lines, locs = [], []
-    for k, s in enumerate(starts):
-        if '%' in s:
-            locs.append(s)
-        else:
+    for k, start in enumerate(starts):
+        if not isinstance(start, LoopValue):
             locs.append(f'{lhs}.i{k}')
-            lines.append(f'{locs[-1]} = stablehlo.constant dense<{int(s)}> : tensor<i64>')
+            lines.append(f'{locs[-1]} = stablehlo.constant dense<{start}> : tensor<i64>')
+        elif start.name:
+            # An attribute's value, emitted at the call
+            locs.append(start.name)
+        else:
+            # A start computed over an attribute's value
+            locs.append(f'{lhs}.i{k}')
+            lines += value_lines(start.value, locs[-1])
     return lines, locs
 
 
 def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
-    lines, locs = index_constants(lhs, [str(start) for start in starts])
+    lines, locs = index_constants(lhs, starts)
     t = mlir_type(lhs_type)
     sizes = lhs_type.split('[', 1)[1].split(']')[0]
     lines.append(
@@ -551,7 +606,7 @@ def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
 
 
 def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types):
-    lines, locs = index_constants(lhs_loc, [str(start) for start in starts])
+    lines, locs = index_constants(lhs_loc, starts)
     t = mlir_type(lhs_type)
     lines.append(
         f'{lhs_loc} = stablehlo.dynamic_update_slice {", ".join([rhs_loc, rhs_update] + locs)} : '

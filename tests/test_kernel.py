@@ -1115,3 +1115,56 @@ def test_instruction_without_regions_runs():
     k('fsim-compile')()
     outputs, _ = k('fsim')(x)
     np.testing.assert_array_equal(np.asarray(outputs[0]), x)
+
+
+# Starts computed over an attribute, in HBM and in a buffer
+shift = Accelerator('SHIFT', base_dir=tempfile.mkdtemp())
+shift.add_data_model('d1', [8], [8], 'u8')
+instr = shift.add_instruction('load_past', [], ['src', 'row'])
+instr.set_inputs([['d0', ['@a.src + 8'], ['8']]])
+instr.set_outputs([['d1', ['@a.row * 2'], ['1']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[8] parameter(0);
+    ROOT %Out0 = u8[1,8] reshape(%In0);
+}
+""")
+instr = shift.add_instruction('store_row', [], ['row', 'dst'])
+instr.set_inputs([['d1', ['@a.row'], ['1']]])
+instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[1,8] parameter(0);
+    ROOT %Out0 = u8[8] reshape(%In0);
+}
+""")
+generate_oracle(shift)
+shift_kernel, shift_api = import_oracle(
+    os.path.join(shift.base_dir, 'targets', 'SHIFT'), 'oracle_SHIFT'
+)
+SHIFT_INPUT = [{'addr': 0, 'shape': (40,), 'dtype': np.uint8}]
+SHIFT_OUTPUT = [{'addr': 40, 'shape': (32,), 'dtype': np.uint8}]
+
+
+# HBM's bytes 8 to 39, through every other row of d1
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
+def test_start_over_looped_attribute_runs(looped):
+    @shift_kernel.kernel(hbm=72, input=SHIFT_INPUT, constant=[], output=SHIFT_OUTPUT)
+    def k():
+        if looped:
+            shift_api.start_loop('i', 0, 4)
+            shift_api.load_past(src='8 * %i', row='%i')
+            shift_api.end_loop()
+            shift_api.start_loop('i', 0, 4)
+            shift_api.store_row(row='2 * %i', dst='40 + 8 * %i')
+            shift_api.end_loop()
+        else:
+            for i in range(4):
+                shift_api.load_past(src=8 * i, row=i)
+            for i in range(4):
+                shift_api.store_row(row=2 * i, dst=40 + 8 * i)
+
+    x = np.arange(1, 41, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x[8:40])

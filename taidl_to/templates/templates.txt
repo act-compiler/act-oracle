@@ -205,11 +205,10 @@ output = []
 try:
     for name, arg in attrs.items():
         if isinstance(arg, str):
-            expr_lines, new_name = generate_loop_eq_vars(
+            expr_lines, attrs[name] = generate_loop_eq_vars(
                 {{name}}, name, arg, loop_stack, global_counters
             )
             output.append(expr_lines)
-            attrs[name] = new_name
             global_counters['loop_var'] += 1
 {{fsim_compile}}
 except ZeroDivisionError as error:
