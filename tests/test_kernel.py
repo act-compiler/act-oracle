@@ -274,8 +274,11 @@ def test_loop_expression_as_computation_attribute_refused():
         api.load_rm(n='%i', addr_in=0, addr_out=0)
         api.end_loop()
 
-    with pytest.raises(TypeError, match='Loop expressions are not supported for computation'):
-        k('fsim-compile')()
+    with pytest.raises(TypeError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == (
+        "load_rm: computational attribute n takes an integer, not the loop expression '%i'"
+    )
 
 
 # Each value a call may pass that is not an integer

@@ -161,11 +161,17 @@ def integral(value):
     return isinstance(value, numbers.Integral) and not isinstance(value, bool)
 
 
-def check_values(instruction, values):
+def check_values(instruction, values, computational=False):
     """A call's values, each an int or a loop expression, refused by name if neither"""
     for name, value in values.items():
         if not integral(value) and not isinstance(value, str):
             raise TypeError(f'{instruction}: {name} {value!r} is not an integer')
+        # A computational attribute takes an int alone
+        if computational and isinstance(value, str):
+            raise TypeError(
+                f'{instruction}: computational attribute {name} takes an integer, '
+                f'not the loop expression {value!r}'
+            )
     # A NumPy integer as an int
     return {name: value if isinstance(value, str) else int(value) for name, value in values.items()}
 
