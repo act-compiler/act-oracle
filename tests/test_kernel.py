@@ -1567,6 +1567,15 @@ ENTRY {
 """)
 instr = called.add_instruction('touch', [], ['src', 'rows'])
 instr.set_inputs([['d0', ['@a.src'], ['@a.rows']]])
+instr = called.add_instruction('head', [], ['src', 'rows', 'dst'])
+instr.set_inputs([['d0', ['@a.src'], ['@a.rows']]])
+instr.set_outputs([['d0', ['@a.dst'], ['@a.rows']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@a.rows`] parameter(0);
+    ROOT %Out0 = u8[`@a.rows`] copy(%In0);
+}
+""")
 generate_oracle(called)
 called_kernel, called_api = import_oracle(
     os.path.join(called.base_dir, 'targets', 'CALLED'), 'oracle_CALLED'
@@ -1656,38 +1665,41 @@ def test_looped_value_of_one_integer_in_a_semantics_runs(looped):
     np.testing.assert_array_equal(np.asarray(outputs[0]), np.tile(x[4:12], 2))
 
 
-def slid():
-    called_api.start_loop('i', 0, 2)
-    called_api.slide(src=0, off='4 * %i', dst='32 + 8 * %i')
-    called_api.end_loop()
+def slid(looped):
+    if looped:
+        called_api.start_loop('i', 0, 2)
+        called_api.slide(src=0, off='4 * %i', dst='32 + 8 * %i')
+        called_api.end_loop()
+    else:
+        for i in range(2):
+            called_api.slide(src=0, off=4 * i, dst=32 + 8 * i)
 
 
-def filled():
-    called_api.start_loop('i', 0, 2)
-    called_api.fill(v='%i', dst=32)
-    called_api.end_loop()
+def filled(looped):
+    if looped:
+        called_api.start_loop('i', 0, 2)
+        called_api.fill(v='%i', dst='32 + 8 * %i')
+        called_api.end_loop()
+    else:
+        for i in range(2):
+            called_api.fill(v=i, dst=32 + 8 * i)
 
 
-# A looped value in a semantics that changes over its loop
+# A looped value in a semantics that changes over its loop, against its unrolled twin
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
 @pytest.mark.parametrize(
-    'body, message',
-    [
-        (
-            slid,
-            "slide: `@a.off` with off='4 * %i' changes over its loop: 0 at %i = 0 and 4 at %i = 1",
-        ),
-        (filled, "fill: `@a.v` with v='%i' changes over its loop: 0 at %i = 0 and 1 at %i = 1"),
-    ],
+    'body, expected',
+    [(slid, np.r_[0:8, 4:12]), (filled, np.repeat([0, 1], 8))],
     ids=['attribute', 'constant'],
 )
-def test_looped_value_changing_in_a_semantics_refused(body, message):
+def test_looped_value_changing_in_a_semantics_runs(body, expected, looped):
     @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
     def k():
-        body()
+        body(looped)
 
-    with pytest.raises(ValueError) as refusal:
-        k('fsim-compile')
-    assert str(refusal.value) == message
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(np.arange(32, dtype=np.uint8))
+    np.testing.assert_array_equal(np.asarray(outputs[0]), expected)
 
 
 # A tile of one shape over its loop, against its unrolled twin
@@ -1711,29 +1723,22 @@ def test_looped_tile_of_one_shape_runs(looped):
     np.testing.assert_array_equal(np.asarray(outputs[0]), x[:16])
 
 
-def grown_take():
-    called_api.start_loop('i', 0, 2)
-    called_api.take(src=0, rows='8 + %i', dst=32)
-    called_api.end_loop()
-
-
-def grown_touch():
-    called_api.start_loop('i', 0, 2)
-    called_api.touch(src=0, rows='8 + %i')
-    called_api.end_loop()
-
-
-# A tile or a region whose looped shape changes over its loop
-@pytest.mark.parametrize(
-    'body, name', [(grown_take, 'take'), (grown_touch, 'touch')], ids=['tile', 'region']
-)
-def test_looped_tile_shape_refused(body, name):
+# A tile and a region whose looped shape changes over its loop, against its unrolled twin
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
+def test_looped_tile_shape_changing_runs(looped):
     @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
     def k():
-        body()
+        if looped:
+            called_api.start_loop('i', 0, 2)
+            called_api.head(src='4 * %i', rows='4 + 8 * %i', dst='32 + 4 * %i')
+            called_api.touch(src=0, rows='8 + %i')
+            called_api.end_loop()
+        else:
+            for i in range(2):
+                called_api.head(src=4 * i, rows=4 + 8 * i, dst=32 + 4 * i)
+                called_api.touch(src=0, rows=8 + i)
 
-    with pytest.raises(ValueError) as refusal:
-        k('fsim-compile')
-    assert str(refusal.value) == (
-        f"{name}: `@a.rows` with rows='8 + %i' changes over its loop: 8 at %i = 0 and 9 at %i = 1"
-    )
+    x = np.arange(32, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x[:16])

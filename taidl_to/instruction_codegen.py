@@ -25,9 +25,8 @@ def tile_dims(instruction: Instruction, value: str, holding=False) -> list:
     lines = instruction.instr_semantics_ast.instruction()
     line = next(line for line in lines if line.IDENTIFIER().getText() == value)
     shape = line.result_type().shape()
-    holder = instruction.instruction if holding else None
     expressions = instruction.instr_expression_asts
-    return [integer(dim, expressions, holder) for dim in shape.dim()] if shape else []
+    return [integer(dim, expressions, holding) for dim in shape.dim()] if shape else []
 
 
 def generate_constraints(instruction: Instruction) -> str:
@@ -74,10 +73,7 @@ def generate_inputs(instruction: Instruction) -> str:
             dims_list = tile_dims(instruction, f'%In{counter}', holding=True)
         else:
             tile_list = size_list
-            dims_list = [
-                held(size, f'`{size.getText()}`', instruction.instruction) for size in sizes
-            ]
-            dims_list += [str(dim) for dim in model.unit_dim]
+            dims_list = [held(size) for size in sizes] + [str(dim) for dim in model.unit_dim]
 
         mapping = {
             'instruction': f"'{instruction.instruction}'",

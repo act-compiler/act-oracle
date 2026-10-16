@@ -1,6 +1,7 @@
 ### TEMPLATE: API_FILE ###
 import ast
 from collections import defaultdict
+from copy import deepcopy
 
 import jax.numpy as jnp
 
@@ -91,7 +92,7 @@ def end_loop():
     if deferred:
         deferred[-1]['calls'].append(loop)
     else:
-        trace_loop(loop)
+        trace_outermost(loop)
 
 
 def defer(name, args, updates=False):
@@ -103,6 +104,27 @@ def defer(name, args, updates=False):
             loop['unrolled'] = True
 
 
+def trace_outermost(loop):
+    global cur_scope
+    # Traced again from here while a value changes over a while loop
+    while True:
+        saved = (
+            deepcopy(global_counters),
+            dict(state),
+            dict(ssa_types),
+            {scope: list(lines) for scope, lines in instruction_scopes.items()},
+        )
+        try:
+            return trace_loop(loop)
+        except Unroll:
+            # The trace back as it was, outside every loop
+            for now, then in zip((global_counters, state, ssa_types, instruction_scopes), saved):
+                now.clear()
+                now.update(then)
+            loop_stack.clear()
+            cur_scope = 'main'
+
+
 def trace_loop(loop):
     # A loop with no iterations traces nothing
     if loop['start'] >= loop['end']:
@@ -110,7 +132,12 @@ def trace_loop(loop):
     # A deferred loop's calls, traced in order as one stablehlo.while
     if not loop['unrolled']:
         open_loop(loop['var'], loop['start'], loop['end'])
-        trace_calls(loop['calls'])
+        try:
+            trace_calls(loop['calls'])
+        except Unroll:
+            # Unrolled once traced again, as is each loop around it
+            loop['unrolled'] = True
+            raise
         close_loop()
         return
     # Else each iteration in turn, its variable bound to it

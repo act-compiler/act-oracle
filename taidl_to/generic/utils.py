@@ -703,24 +703,18 @@ def check_tile(instruction, value, where, buffer, typ, tile, region):
             )
 
 
-def fixed(instruction, expression, value, given):
-    """A value's one integer over its loops, refused by name where it changes"""
+class Unroll(Exception):
+    """A held value changes over the while loops around its call, which must unroll"""
+
+
+def fixed(value):
+    """A value's one integer over its loops, raising Unroll where it changes"""
     if not isinstance(value, LoopValue):
         return value
-    # The first iteration at which it takes each value
-    taken = {}
-    for env in iterations(value.value, value.loops):
-        taken.setdefault(evaluate(value.value, env), env)
+    taken = {evaluate(value.value, env) for env in iterations(value.value, value.loops)}
     if len(taken) > 1:
-        shown = ', '.join(f'{name}={arg!r}' for name, arg in given.items() if isinstance(arg, str))
-        changes = ' and '.join(
-            f'{at} at ' + ', '.join(f'{var} = {i}' for var, i in env.items())
-            for at, env in list(taken.items())[:2]
-        )
-        raise ValueError(
-            f'{instruction}: {expression} with {shown} changes over its loop: {changes}'
-        )
-    return next(iter(taken))
+        raise Unroll
+    return taken.pop()
 
 
 def written(value):

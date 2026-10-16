@@ -367,7 +367,7 @@ class OracleVisitor(IDLV2Visitor):
         """A constant's literal as Python, checked against typ here; an expression at the call"""
         text = value.getText()
         if value.EXPRESSION():
-            return integer(value, self.expressions, self.instruction)
+            return integer(value, self.expressions, holding=True)
         if value.IDENTIFIER():
             literal = text == 'true'
         elif re.fullmatch(r'-?[0-9]+', text):
@@ -383,7 +383,7 @@ class OracleVisitor(IDLV2Visitor):
 
     def integer(self, ctx):
         """An integer as Python, a looped value held unless holding is off"""
-        return integer(ctx, self.expressions, self.instruction if self.holding else None)
+        return integer(ctx, self.expressions, self.holding)
 
     def visitAttribute(self, ctx: IDLV2Parser.AttributeContext):
         attr_name = ctx.name().getText()
