@@ -2,6 +2,7 @@
 
 from taidl import Instruction
 
+from .expression_writer import python
 from .semantic_generator import generate_semantic_code
 from .template import dict_text, generate_code, indent_code, init_templates, layout, templates
 
@@ -17,33 +18,23 @@ SHARED_NAMES = {
 
 
 def generate_inputs(instruction: Instruction) -> str:
-    """Generate input loading code from instruction's instr_inputs"""
+    """Generate input loading code from instruction's instr_input_asts"""
     init_templates()
     output = ''
 
-    for counter, slice_spec in enumerate(instruction.instr_inputs, start=1):
-        assert len(slice_spec) == 3, 'Wrong input slice formatting.'
-
-        buffer_name = slice_spec[0]
-        start_indices = slice_spec[1]
-        shapes = slice_spec[2]
-
+    for counter, (buffer_name, starts, sizes) in enumerate(instruction.instr_input_asts):
         model = instruction.find_data_model(buffer_name)
 
-        size_list = [f"'{s}'" for s in shapes]
-        for unit_dim in model.unit_dim:
-            size_list.append(f"'{unit_dim}'")
-
-        slice_configs = [f"'{start}'" for start in start_indices]
-        for unit_dim in model.unit_dim:
-            slice_configs.append("'0'")
+        # Starts and sizes as Python evaluated at each call
+        size_list = [python(size) for size in sizes] + [str(dim) for dim in model.unit_dim]
+        start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
 
         mapping = {
             'rhs_name': f"'{buffer_name}'",
             'lhs': f"'In{counter}'",
             'type': f"'{model.var_type}'",
             'size': '[' + ', '.join(size_list) + ']',
-            'slice': '[' + ', '.join(slice_configs) + ']',
+            'starts': '[' + ', '.join(start_list) + ']',
         }
         output += generate_code(templates['SLICE_LOAD'], mapping)
 
@@ -51,26 +42,19 @@ def generate_inputs(instruction: Instruction) -> str:
 
 
 def generate_outputs(instruction: Instruction) -> str:
-    """Generate output storing code from instruction's instr_outputs"""
+    """Generate output storing code from instruction's instr_output_asts"""
     init_templates()
     code_output = ''
 
-    for counter, slice_spec in enumerate(instruction.instr_outputs):
-        assert len(slice_spec) == 3, 'Wrong output slice formatting.'
-
-        buffer_name = slice_spec[0]
-        start_indices = slice_spec[1]
-
+    for counter, (buffer_name, starts, _) in enumerate(instruction.instr_output_asts):
         model = instruction.find_data_model(buffer_name)
 
-        start_list = [f"'{idx}'" for idx in start_indices]
-        for _ in model.unit_dim:
-            start_list.append("'0'")
+        start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
 
         mapping = {
             'lhs': f"'Out{counter}'",
             'rhs_name': f"'{buffer_name}'",
-            'slice': '[' + ', '.join(start_list) + ']',
+            'starts': '[' + ', '.join(start_list) + ']',
         }
         code_output += generate_code(templates['SLICE_STORE'], mapping)
 
@@ -115,7 +99,7 @@ def generate_api_function(instruction: Instruction) -> str:
         update += '\n' + line
 
     inputs = generate_inputs(instruction)
-    semantics = generate_semantic_code(instruction.instr_semantics_ast)
+    semantics = generate_semantic_code(instruction)
     outputs = generate_outputs(instruction)
 
     parts = []

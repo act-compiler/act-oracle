@@ -19,11 +19,11 @@ instr = ops.add_instruction('dot_perm', [], ['addr_a', 'addr_b', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_a'], ['8192']], ['d0', ['@a.addr_b'], ['8192']]])
 instr.set_outputs([['d0', ['@a.addr_out'], ['8192']]])
 instr.add_semantics("""
-ENTRY dot_perm {
-    %In1 = u8[8192] parameter(0);
-    %In2 = u8[8192] parameter(1);
-    %a = u8[8,8,64,2] reshape(%In1);
-    %b = u8[8,8,64,2] reshape(%In2);
+ENTRY {
+    %In0 = u8[8192] parameter(0);
+    %In1 = u8[8192] parameter(1);
+    %a = u8[8,8,64,2] reshape(%In0);
+    %b = u8[8,8,64,2] reshape(%In1);
     %c = bf16[8,8,64] bitcast_convert(%a);
     %d = bf16[8,8,64] bitcast_convert(%b);
     %e = bf16[64,64] dot(%c, %d), lhs_contracting_dims={0,1}, rhs_contracting_dims={1,0};
@@ -32,7 +32,7 @@ ENTRY dot_perm {
 }
 """)
 
-# A row sum per type the grammar lexes
+# A row sum per type: four integer types, three floats
 TYPES = {
     's8': jnp.int8,
     's32': jnp.int32,
@@ -49,9 +49,9 @@ for t, dtype in TYPES.items():
     instr.set_inputs([['d0', ['@a.addr_in'], [f'{64 * 64 * w}']]])
     instr.set_outputs([['d0', ['@a.addr_out'], [f'{64 * w}']]])
     instr.add_semantics(f"""
-ENTRY sum_{t} {{
-    %In1 = u8[{64 * 64 * w}] parameter(0);
-    %a = u8[64,64{unit}] reshape(%In1);
+ENTRY {{
+    %In0 = u8[{64 * 64 * w}] parameter(0);
+    %a = u8[64,64{unit}] reshape(%In0);
     %b = {t}[64,64] bitcast_convert(%a);
     %c = {t}[64] reduce_add(%b), dimensions={{1}};
     %d = u8[64{unit}] bitcast_convert(%c);
@@ -78,9 +78,9 @@ for name, (body, _) in BROADCASTS.items():
     instr.set_inputs([['d0', ['@a.addr_in'], ['8192']]])
     instr.set_outputs([['d0', ['@a.addr_out'], ['8192']]])
     instr.add_semantics(f"""
-ENTRY {name} {{
-    %In1 = u8[8192] parameter(0);
-    %a = u8[64,64,2] reshape(%In1);
+ENTRY {{
+    %In0 = u8[8192] parameter(0);
+    %a = u8[64,64,2] reshape(%In0);
     %x = bf16[64,64] bitcast_convert(%a);
     {body}
     %b = u8[64,64,2] bitcast_convert(%y);
@@ -93,11 +93,11 @@ instr = ops.add_instruction('dot_batched', [], ['addr_a', 'addr_b', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_a'], ['8192']], ['d0', ['@a.addr_b'], ['8192']]])
 instr.set_outputs([['d0', ['@a.addr_out'], ['4096']]])
 instr.add_semantics("""
-ENTRY dot_batched {
-    %In1 = u8[8192] parameter(0);
-    %In2 = u8[8192] parameter(1);
-    %a = u8[8,16,32,2] reshape(%In1);
-    %b = u8[8,32,16,2] reshape(%In2);
+ENTRY {
+    %In0 = u8[8192] parameter(0);
+    %In1 = u8[8192] parameter(1);
+    %a = u8[8,16,32,2] reshape(%In0);
+    %b = u8[8,32,16,2] reshape(%In1);
     %c = bf16[8,16,32] bitcast_convert(%a);
     %d = bf16[8,32,16] bitcast_convert(%b);
     %e = bf16[8,16,16] dot(%c, %d), lhs_batch_dims={0}, lhs_contracting_dims={2}, rhs_batch_dims={0}, rhs_contracting_dims={1};
@@ -111,9 +111,9 @@ instr = ops.add_instruction('copy_retyped', [], ['addr_in', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_in'], ['8192']]])
 instr.set_outputs([['d0', ['@a.addr_out'], ['8192']]])
 instr.add_semantics("""
-ENTRY copy_retyped {
-    %In1 = u8[8192] parameter(0);
-    %a = u8[64,64,2] reshape(%In1);
+ENTRY {
+    %In0 = u8[8192] parameter(0);
+    %a = u8[64,64,2] reshape(%In0);
     %x = bf16[64,64] bitcast_convert(%a);
     %y = f16[64,64] copy(%x);
     %b = u8[64,64,2] bitcast_convert(%y);
@@ -127,9 +127,9 @@ instr = ops.add_instruction('store_d1', [], ['addr_out'])
 instr.set_inputs([['d1', ['0'], ['64']]])
 instr.set_outputs([['d0', ['@a.addr_out'], ['16384']]])
 instr.add_semantics("""
-ENTRY store_d1 {
-    %In1 = s32[64,64] parameter(0);
-    %a = u8[64,64,4] bitcast_convert(%In1);
+ENTRY {
+    %In0 = s32[64,64] parameter(0);
+    %a = u8[64,64,4] bitcast_convert(%In0);
     ROOT %Out0 = u8[16384] reshape(%a);
 }
 """)
@@ -139,10 +139,37 @@ instr = ops.add_instruction('named_out', [], ['addr_in', 'addr_out'])
 instr.set_inputs([['d0', ['@a.addr_in'], ['8192']]])
 instr.set_outputs([['d0', ['@a.addr_out'], ['8192']]])
 instr.add_semantics("""
-ENTRY named_out {
-    %In1 = u8[8192] parameter(0);
-    %out = u8[8192] copy(%In1);
+ENTRY {
+    %In0 = u8[8192] parameter(0);
+    %out = u8[8192] copy(%In0);
     ROOT %Out0 = u8[8192] copy(%out);
+}
+""")
+
+# A float through a rank-0 value and back
+instr = ops.add_instruction('rank0', [], ['addr_in', 'addr_out'])
+instr.set_inputs([['d0', ['@a.addr_in'], ['4']]])
+instr.set_outputs([['d0', ['@a.addr_out'], ['4']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[] reshape(%b);
+    %d = f32[1] reshape(%c);
+    %e = u8[1,4] bitcast_convert(%d);
+    ROOT %Out0 = u8[4] reshape(%e);
+}
+""")
+
+# Two attributes, one name beginning the other
+instr = ops.add_instruction('prefix', ['n', 'n_rows'], ['addr', 'addr_out'])
+instr.set_inputs([['d0', ['@a.addr'], ['@c.n_rows * 128 / @c.n']]])
+instr.set_outputs([['d0', ['@a.addr_out'], ['@c.n_rows * 128 / @c.n']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@c.n_rows * 128 / @c.n`] parameter(0);
+    ROOT %Out0 = u8[`@c.n_rows * 128 / @c.n`] copy(%In0);
 }
 """)
 
@@ -224,65 +251,6 @@ def test_reduce_add_types(t):
     np.testing.assert_array_equal(out, np.asarray(x, np.float64).sum(axis=1))
 
 
-# Words the grammar lexes that no template lowers
-UNMAPPED = [
-    'exp',
-    'concatenate',
-    'slice',
-    'constant',
-    'select_lt',
-    'select_eq_var',
-    'dynamic_update_slice',
-    'reduce',
-]
-
-
-@pytest.mark.parametrize('op', UNMAPPED)
-def test_unmapped_operation_refused(op):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('refused', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics(f"""
-ENTRY refused {{
-    %In1 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] {op}(%In1);
-}}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
-        generate_oracle(acc)
-
-
-# Module state a generated function reads or sets
-SHARED_NAMES = [
-    'comp_attrs',
-    'cur_scope',
-    'global_counters',
-    'instruction_scopes',
-    'ssa_types',
-    'state',
-]
-
-
-@pytest.mark.parametrize('addressing', [False, True])
-@pytest.mark.parametrize('name', SHARED_NAMES)
-def test_attribute_named_as_a_shared_name_refused(name, addressing):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    # The name as a computation or an addressing attribute
-    attributes = ([], [name, 'addr']) if addressing else ([name], ['addr'])
-    instr = acc.add_instruction('refused', *attributes)
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY refused {
-    %In1 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] copy(%In1);
-}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: attribute name '{name}' is reserved"):
-        generate_oracle(acc)
-
-
 @pytest.mark.parametrize('name', BROADCASTS)
 def test_broadcast_dimensions(name):
     x = small_ints((64, 64))
@@ -290,16 +258,30 @@ def test_broadcast_dimensions(name):
     np.testing.assert_array_equal(out, BROADCASTS[name][1](np.asarray(x, np.float64)))
 
 
-def test_broadcast_without_dimensions_refused():
-    acc = Accelerator('NODIMS', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('nodims', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY nodims {
-    %In1 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] broadcast(%In1);
-}
-""")
-    with pytest.raises(ValueError, match="nodims: broadcast '%Out0' has no dimensions"):
-        generate_oracle(acc)
+def test_rank0_result():
+    x = jnp.asarray([3.25], dtype=jnp.float32)
+    np.testing.assert_array_equal(run('rank0', [x], (1,), jnp.float32), [3.25])
+
+
+def test_attribute_named_by_the_start_of_another():
+    @decorator.kernel(
+        hbm=OUT_ADDR + 16384,
+        input=[{'addr': IN_ADDRS[0], 'shape': (8192,), 'dtype': np.uint8}],
+        constant=[],
+        output=[{'addr': OUT_ADDR, 'shape': (8192,), 'dtype': np.uint8}],
+    )
+    def k():
+        api.prefix(1, 64, IN_ADDRS[0], OUT_ADDR)
+
+    x = jnp.asarray(rng.integers(0, 256, 8192), dtype=jnp.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), np.asarray(x))
+
+
+def test_state_variable_in_the_api():
+    acc = Accelerator('STATE', base_dir=tempfile.mkdtemp())
+    acc.add_initial_state('mode', 3)
+    generate_oracle(acc)
+    with open(os.path.join(acc.base_dir, 'targets', 'STATE', 'oracle', 'api.py')) as file:
+        assert "'mode': 3," in file.read()

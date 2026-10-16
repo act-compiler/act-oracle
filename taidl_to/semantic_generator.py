@@ -3,12 +3,12 @@
 from .oracle_visitor import OracleVisitor
 
 
-def generate_semantic_code(ast) -> str:
-    if ast is None:
+def generate_semantic_code(instruction) -> str:
+    if instruction.instr_semantics_ast is None:
         return ''
 
-    visitor = OracleVisitor()
-    visitor.visit(ast)
+    visitor = OracleVisitor(instruction.instruction, instruction.instr_expression_asts)
+    visitor.visit(instruction.instr_semantics_ast)
 
     code = '\n'.join(visitor.instruction_lines)
 
