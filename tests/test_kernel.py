@@ -4,14 +4,18 @@ import glob
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import types
 
 import jax.numpy as jnp
+import ml_dtypes
 import numpy as np
 import pytest
 from conftest import (
+    DTYPES,
     EXAMPLES_DIR,
+    NARROW,
     PLATFORM,
     attention_reference,
     generate_and_import_oracle,
@@ -20,6 +24,9 @@ from conftest import (
     load_bf16_matrix,
     run_kernel,
 )
+from taidl import Accelerator
+
+from taidl_to import generate_oracle
 
 MINI_TRN_DIR = os.path.join(EXAMPLES_DIR, 'mini_trn')
 kernel, api = generate_and_import_oracle(MINI_TRN_DIR)
@@ -760,3 +767,86 @@ def test_call_outside_kernel_refused(when):
     copy_q('fsim-compile')()
     outputs, _ = copy_q('fsim')(Q, K, V)
     assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
+
+
+# Elements per byte of each sub-byte type
+PACK = {'s2': 4, 'u2': 4, 's4': 2, 'u4': 2}
+
+# A buffer of each narrow type, 32 elements, loaded from and stored to its bytes
+narrow = Accelerator('NARROW', base_dir=tempfile.mkdtemp())
+for k, t in enumerate(NARROW):
+    pack = PACK.get(t, 1)
+    nbytes, packed = 32 // pack, f'{t}[{32 // pack}{f",{pack}" if pack > 1 else ""}]'
+    narrow.add_data_model(f'd{k + 1}', [4], [8], t)
+    instr = narrow.add_instruction(f'load_{t}', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], [str(nbytes)]]])
+    instr.set_outputs([[f'd{k + 1}', ['0'], ['4']]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[{nbytes}] parameter(0);
+    %a = {packed} bitcast_convert(%In0);
+    ROOT %Out0 = {t}[4,8] reshape(%a);
+}}
+""")
+    instr = narrow.add_instruction(f'store_{t}', [], ['addr'])
+    instr.set_inputs([[f'd{k + 1}', ['0'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr'], [str(nbytes)]]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = {t}[4,8] parameter(0);
+    %a = {packed} reshape(%In0);
+    ROOT %Out0 = u8[{nbytes}] bitcast_convert(%a);
+}}
+""")
+generate_oracle(narrow)
+narrow_kernel, narrow_api = import_oracle(
+    os.path.join(narrow.base_dir, 'targets', 'NARROW'), 'oracle_NARROW'
+)
+
+
+@pytest.mark.parametrize('t', NARROW)
+def test_narrow_values_through_hbm(t):
+    dtype, rng = DTYPES[t], np.random.default_rng(len(t))
+    # Small integers each type holds exactly
+    low, high = (-8, 8) if t[0] == 'f' else (ml_dtypes.iinfo(dtype).min, ml_dtypes.iinfo(dtype).max)
+    x, c = (rng.integers(low, high + 1, (4, 8)).astype(dtype) for _ in range(2))
+    nbytes = 32 // PACK.get(t, 1)
+    spec = {'shape': (4, 8), 'dtype': dtype}
+    load, store = getattr(narrow_api, f'load_{t}'), getattr(narrow_api, f'store_{t}')
+
+    # The input and the constant, each through its buffer to an output
+    @narrow_kernel.kernel(
+        hbm=4 * nbytes,
+        input=[{'addr': 0, **spec}],
+        constant=[{'addr': nbytes, 'value': c, **spec}],
+        output=[{'addr': 2 * nbytes, **spec}, {'addr': 3 * nbytes, **spec}],
+    )
+    def k():
+        load(addr=0)
+        store(addr=2 * nbytes)
+        load(addr=nbytes)
+        store(addr=3 * nbytes)
+
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    for out, expected in zip(outputs, (x, c)):
+        assert np.asarray(out).dtype == dtype
+        np.testing.assert_array_equal(
+            np.asarray(out).astype(np.float64), expected.astype(np.float64)
+        )
+
+
+@pytest.mark.parametrize(('t', 'shape'), [('s2', (6,)), ('u4', (3, 3))])
+def test_narrow_value_of_part_bytes_refused(t, shape):
+    spec = {'addr': 0, 'shape': shape, 'dtype': DTYPES[t]}
+
+    @narrow_kernel.kernel(hbm=64, input=[spec], constant=[], output=[])
+    def k():
+        pass
+
+    count, name = int(np.prod(shape)), np.dtype(DTYPES[t]).name
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == (
+        f"input 0 of kernel 'k': {count} elements of {name} do not fill whole bytes"
+    )

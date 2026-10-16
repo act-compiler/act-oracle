@@ -10,7 +10,7 @@ from jax.extend.backend import backends, get_backend, get_compile_options
 
 from . import api
 from .build import print_handler_ext
-from .utils import XLA_ELEM_TYPE, spec_bytes
+from .utils import XLA_ELEM_TYPE, packing, spec_bytes
 
 backend = None
 
@@ -87,6 +87,10 @@ def check_declaration(name, hbm, input, constant, output):
                 ) from None
             if dtype.name not in XLA_ELEM_TYPE:
                 raise TypeError(f'{what}: dtype {dtype} is not supported by the oracle')
+            # A sub-byte dtype fills whole bytes
+            count = int(np.prod(spec['shape'], dtype=np.int64))
+            if count % packing(dtype):
+                raise ValueError(f'{what}: {count} elements of {dtype} do not fill whole bytes')
 
     # Each constant's value of its declared shape and dtype
     for i, const in enumerate(constant):

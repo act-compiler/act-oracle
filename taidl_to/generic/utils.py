@@ -415,10 +415,16 @@ XLA_ELEM_TYPE = {
     'float16': 'f16',
     'float32': 'f32',
     'float64': 'f64',
+    'float8_e4m3fn': 'f8e4m3fn',
+    'float8_e5m2': 'f8e5m2',
+    'uint2': 'u2',
+    'uint4': 'u4',
     'uint8': 'u8',
     'uint16': 'u16',
     'uint32': 'u32',
     'uint64': 'u64',
+    'int2': 's2',
+    'int4': 's4',
     'int8': 's8',
     'int16': 's16',
     'int32': 's32',
@@ -426,16 +432,37 @@ XLA_ELEM_TYPE = {
     'bool': 'pred',
 }
 
+# Elements per byte of each sub-byte type
+PACKED = {'s2': 4, 'u2': 4, 's4': 2, 'u4': 2}
+
 
 def spec_mlir_type(dims, dtype):
     return mlir_type(f'{XLA_ELEM_TYPE[np.dtype(dtype).name]}[{",".join(str(d) for d in dims)}]')
 
 
+def packing(dtype):
+    """Elements per byte of a dtype in HBM, one unless it is sub-byte"""
+    return PACKED.get(XLA_ELEM_TYPE[np.dtype(dtype).name], 1)
+
+
 def spec_bytes(spec):
-    """Byte count of a spec and its u8 view shape; a multi-byte dtype gains a trailing dim"""
+    """Byte count of a spec and its u8 view shape; a multi-byte dtype gains a trailing dim, a
+    sub-byte one packs into whole bytes"""
     width = int(np.dtype(spec['dtype']).itemsize)
     dims = [int(d) for d in spec['shape']]
-    return width * int(np.prod(dims, dtype=np.int64)), dims + ([width] if width > 1 else [])
+    count, pack = int(np.prod(dims, dtype=np.int64)), packing(spec['dtype'])
+    if pack > 1:
+        return count // pack, [count // pack]
+    return width * count, dims + ([width] if width > 1 else [])
+
+
+def packed(name, value, value_t, dtype, nbytes):
+    """The lines packing value, a sub-byte value_t, into name, its nbytes bytes"""
+    packed_t = spec_mlir_type([nbytes, packing(dtype)], dtype)
+    return [
+        f'{name}.p = stablehlo.reshape {value} : ({value_t}) -> {packed_t}',
+        f'{name} = stablehlo.bitcast_convert {name}.p : ({packed_t}) -> {mlir_type(f"u8[{nbytes}]")}',
+    ]
 
 
 def byte_cast(dtype):
@@ -448,6 +475,15 @@ def kernel_prologue(hbm_size, inputs, constants):
     """The module's parameters, and the lines laying them and the constants into %d0.0"""
     params, lines, pieces = [], [], []
     for j, const in enumerate(constants):
+        if packing(const['dtype']) > 1:
+            # A sub-byte constant, by its values, packs as an input does
+            values = np.asarray(const['value']).reshape(-1)
+            nbytes, value_t = spec_bytes(const)[0], spec_mlir_type([values.size], const['dtype'])
+            given = ', '.join(str(int(v)) for v in values)
+            lines.append(f'%hbm.v{j} = stablehlo.constant dense<[{given}]> : {value_t}')
+            lines += packed(f'%hbm.c{j}', f'%hbm.v{j}', value_t, const['dtype'], nbytes)
+            pieces.append((int(const['addr']), nbytes, f'%hbm.c{j}', mlir_type(f'u8[{nbytes}]')))
+            continue
         flat = np.ascontiguousarray(np.asarray(const['value'])).reshape(-1).view(np.uint8)
         flat_t = mlir_type(f'u8[{flat.size}]')
         lines.append(f'%hbm.c{j} = stablehlo.constant dense<"0x{flat.tobytes().hex()}"> : {flat_t}')
@@ -457,9 +493,12 @@ def kernel_prologue(hbm_size, inputs, constants):
         nbytes, byte_dims = spec_bytes(spec)
         byte_t, flat_t = spec_mlir_type(byte_dims, np.uint8), mlir_type(f'u8[{nbytes}]')
         params.append(f'%arg{i}: {arg_t}')
-        cast = byte_cast(spec['dtype'])
-        lines.append(f'%hbm.b{i} = stablehlo.{cast} %arg{i} : ({arg_t}) -> {byte_t}')
-        lines.append(f'%hbm.f{i} = stablehlo.reshape %hbm.b{i} : ({byte_t}) -> {flat_t}')
+        if packing(spec['dtype']) > 1:
+            lines += packed(f'%hbm.f{i}', f'%arg{i}', arg_t, spec['dtype'], nbytes)
+        else:
+            cast = byte_cast(spec['dtype'])
+            lines.append(f'%hbm.b{i} = stablehlo.{cast} %arg{i} : ({arg_t}) -> {byte_t}')
+            lines.append(f'%hbm.f{i} = stablehlo.reshape %hbm.b{i} : ({byte_t}) -> {flat_t}')
         pieces.append((int(spec['addr']), nbytes, f'%hbm.f{i}', flat_t))
 
     parts, cursor = [], 0
@@ -495,9 +534,18 @@ def kernel_epilogue(hbm_loc, outputs, ssa_types):
         lines.append(
             f'%out.s{i} = stablehlo.slice {hbm_loc} [{addr}:{addr + nbytes}:1] : ({ssa_types[hbm_loc]}) -> {flat_t}'
         )
-        lines.append(f'%out.r{i} = stablehlo.reshape %out.s{i} : ({flat_t}) -> {byte_t}')
-        cast = byte_cast(spec['dtype'])
-        lines.append(f'%out.o{i} = stablehlo.{cast} %out.r{i} : ({byte_t}) -> {out_t}')
+        pack = packing(spec['dtype'])
+        if pack > 1:
+            # A sub-byte output unpacks from its bytes
+            packed_t = spec_mlir_type([nbytes, pack], spec['dtype'])
+            lines.append(
+                f'%out.p{i} = stablehlo.bitcast_convert %out.s{i} : ({flat_t}) -> {packed_t}'
+            )
+            lines.append(f'%out.o{i} = stablehlo.reshape %out.p{i} : ({packed_t}) -> {out_t}')
+        else:
+            lines.append(f'%out.r{i} = stablehlo.reshape %out.s{i} : ({flat_t}) -> {byte_t}')
+            cast = byte_cast(spec['dtype'])
+            lines.append(f'%out.o{i} = stablehlo.{cast} %out.r{i} : ({byte_t}) -> {out_t}')
         names.append(f'%out.o{i}')
         types.append(out_t)
     return lines, names, types
