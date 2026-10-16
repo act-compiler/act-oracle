@@ -10,9 +10,9 @@ from .shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .template import generate_code, templates
 
 # Element types as a semantics spells them
-FLOATS = ('f64', 'f32', 'f16', 'bf16')
-SIGNED = ('s8', 's16', 's32', 's64')
-INTEGERS = ('u8', 'u16', 'u32', 'u64', *SIGNED)
+FLOATS = ('f64', 'f32', 'f16', 'bf16', 'f8e4m3fn', 'f8e5m2')
+SIGNED = ('s2', 's4', 's8', 's16', 's32', 's64')
+INTEGERS = ('u2', 'u4', 'u8', 'u16', 'u32', 'u64', *SIGNED)
 EVERY = (*FLOATS, *INTEGERS, 'pred')
 
 # Each word's element types, at its first operand or result

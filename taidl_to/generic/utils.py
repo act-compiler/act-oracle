@@ -124,10 +124,16 @@ MLIR_ELEM_TYPE = {
     'f32': 'f32',
     'f16': 'f16',
     'bf16': 'bf16',
+    'f8e4m3fn': 'f8E4M3FN',
+    'f8e5m2': 'f8E5M2',
+    'u2': 'ui2',
+    'u4': 'ui4',
     'u8': 'ui8',
     'u16': 'ui16',
     'u32': 'ui32',
     'u64': 'ui64',
+    's2': 'i2',
+    's4': 'i4',
     's8': 'i8',
     's16': 'i16',
     's32': 'i32',
@@ -153,11 +159,32 @@ def mlir_elem(mlir_t):
 
 
 def mlir_zero(mlir_t):
-    return '0.0' if mlir_elem(mlir_t) in ('f64', 'f32', 'f16', 'bf16') else '0'
+    floats = ('f64', 'f32', 'f16', 'bf16', 'f8E4M3FN', 'f8E5M2')
+    return '0.0' if mlir_elem(mlir_t) in floats else '0'
 
 
 # Exponent and mantissa bits of each float type
-FLOAT_BITS = {'f64': (11, 52), 'f32': (8, 23), 'f16': (5, 10), 'bf16': (8, 7)}
+FLOAT_BITS = {
+    'f64': (11, 52),
+    'f32': (8, 23),
+    'f16': (5, 10),
+    'bf16': (8, 7),
+    'f8e4m3fn': (4, 3),
+    'f8e5m2': (5, 2),
+}
+
+# Float types with no infinity, their top exponent finite
+NO_INFINITY = ('f8e4m3fn',)
+
+
+def float_largest(typ):
+    """The largest finite value of a float type, and half its unit in the last place"""
+    exponent, mantissa = FLOAT_BITS[typ]
+    top = (1 << (exponent - 1)) - 1 - mantissa
+    if typ in NO_INFINITY:
+        # The top exponent's all-ones mantissa is its nan
+        return ((1 << (mantissa + 1)) - 2) << (top + 1), 1 << top
+    return ((1 << (mantissa + 1)) - 1) << top, 1 << (top - 1)
 
 
 def mlir_literal(value, typ, shown=None):
@@ -169,19 +196,22 @@ def mlir_literal(value, typ, shown=None):
         exponent, mantissa = FLOAT_BITS[typ]
         if isinstance(value, int) or math.isfinite(value):
             # Out of range: a finite value rounding past typ's largest
-            past = ((1 << (mantissa + 2)) - 1) << ((1 << (exponent - 1)) - mantissa - 2)
-            if abs(value) >= past:
+            largest, half = float_largest(typ)
+            # At the tie, rounding to even keeps a no-infinity type's largest
+            bound = largest + half
+            if abs(value) > bound or (abs(value) == bound and typ not in NO_INFINITY):
                 raise ValueError(f'{shown} at {typ} is out of its range')
             # MLIR reads a float with a dot before its exponent
             text = repr(float(value))
             return text if '.' in text else text.replace('e', '.0e')
-        # A decimal past a double's range reads as an infinity
-        if math.isinf(value) and 'inf' not in shown:
+        # A decimal past a double's range reads as an infinity, which some types lack
+        if math.isinf(value) and ('inf' not in shown or typ in NO_INFINITY):
             raise ValueError(f'{shown} at {typ} is out of its range')
         # MLIR reads a non-finite float by its bits
         bits = ((1 << exponent) - 1) << mantissa
         if math.isnan(value):
-            bits |= 1 << (mantissa - 1)
+            # A type with no infinity sets every mantissa bit
+            bits |= (1 << mantissa) - 1 if typ in NO_INFINITY else 1 << (mantissa - 1)
         if math.copysign(1, value) < 0:
             bits |= 1 << (exponent + mantissa)
         return f'0x{bits:X}'
@@ -207,6 +237,10 @@ def reduce_init(op, typ):
     """The identity of reducer op at element type typ, as an MLIR literal; a float sum starts
     from +0.0, as XLA's does"""
     least, greatest = (-math.inf, math.inf) if typ in FLOAT_BITS else integer_range(typ)
+    if typ in NO_INFINITY:
+        # A float with no infinity is bounded by its largest
+        greatest = float_largest(typ)[0]
+        least = -greatest
     identities = {'add': 0, 'multiply': 1, 'maximum': least, 'minimum': greatest, 'or': 0, 'xor': 0}
     if typ not in FLOAT_BITS:
         # and's identity has every bit set

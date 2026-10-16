@@ -445,35 +445,6 @@ def test_disagreeing_shapes_and_attributes_refused(case):
         generate_oracle(acc)
 
 
-# Types the grammar lexes that the oracle does not lower
-UNLOWERED_TYPES = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
-
-
-@pytest.mark.parametrize('t', UNLOWERED_TYPES)
-def test_unlowered_type_in_semantics_refused(t):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('refused', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics(f"""
-ENTRY {{
-    %In0 = u8[2] parameter(0);
-    %a = {t}[2] convert(%In0);
-    ROOT %Out0 = u8[2] convert(%a);
-}}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: type '{t}' is not supported"):
-        generate_oracle(acc)
-
-
-@pytest.mark.parametrize('t', UNLOWERED_TYPES)
-def test_unlowered_type_in_data_model_refused(t):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    acc.add_data_model('d1', [4], [4], t)
-    with pytest.raises(NotImplementedError, match=f"d1: type '{t}' is not supported"):
-        generate_oracle(acc)
-
-
 def two_bytes(base_dir, name, line):
     """Accelerator REGENERATED, its one instruction ending in line"""
     acc = Accelerator('REGENERATED', base_dir=base_dir)

@@ -45,6 +45,8 @@ FLOATS = ['f64', 'f32', 'f16', 'bf16']
 SIGNED = ['s8', 's16', 's32', 's64']
 INTEGERS = ['u8', 'u16', 'u32', 'u64', *SIGNED]
 EVERY = FLOATS + INTEGERS + ['pred']
+# The sub-byte integers and the 8-bit floats
+NARROW = ['s2', 'u2', 's4', 'u4', 'f8e4m3fn', 'f8e5m2']
 
 # Each element type and the dtype that holds it
 DTYPES = {
@@ -61,9 +63,15 @@ DTYPES = {
     's32': np.int32,
     's64': np.int64,
     'pred': np.bool_,
+    's2': ml_dtypes.int2,
+    'u2': ml_dtypes.uint2,
+    's4': ml_dtypes.int4,
+    'u4': ml_dtypes.uint4,
+    'f8e4m3fn': ml_dtypes.float8_e4m3fn,
+    'f8e5m2': ml_dtypes.float8_e5m2,
 }
 
-# Each lowered word and the element types it lowers at
+# Each lowered word and the types it lowers at
 LOWERED = {
     'reshape': EVERY,
     'convert': EVERY,
