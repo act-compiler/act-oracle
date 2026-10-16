@@ -593,6 +593,73 @@ def index_constants(lhs, starts):
     return lines, locs
 
 
+def tensor_dims(mlir_t):
+    """tensor<64x64xbf16> -> [64, 64]"""
+    return [int(d) for d in mlir_t[len('tensor<') : -1].split('x')[:-1]]
+
+
+def check_sizes(instruction, sizes, dims):
+    """Refuse a region size or a semantics dim that is not positive, at any iteration"""
+    for kind, given in (('size', sizes), ('dimension', dims)):
+        for text, size in given.items():
+            # A plain size as a LoopValue over no loops
+            read = size if isinstance(size, LoopValue) else LoopValue(literal(size), {})
+            for env in iterations(read.value, read.loops):
+                at = evaluate(read.value, env)
+                if at < 1:
+                    iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
+                    raise ValueError(
+                        f'{instruction}: {kind} {text} is {at}'
+                        + (f' at {iteration}' if env else '')
+                        + ', not positive'
+                    )
+
+
+def debug_index(data, global_counters):
+    """The buffer a debug call names and its index, an integer per leading dim, none for ':'"""
+    name, bracket, index = data.partition('[')
+    # Each buffer's counter a dict, each trace counter an int
+    buffers = [key for key, counter in global_counters.items() if isinstance(counter, dict)]
+    if name not in buffers:
+        raise ValueError(f'debug: {data!r} names no buffer')
+    if not bracket or not index.endswith(']') or not index[:-1].strip():
+        raise ValueError(
+            f'debug: {data!r} gives no index; {name + "[:]"!r} prints the whole buffer'
+        )
+    # A bare ':' the whole buffer, each entry a Python integer literal
+    entries = (
+        [] if index[:-1].strip() == ':' else [entry.strip() for entry in index[:-1].split(',')]
+    )
+    indices = []
+    for entry in entries:
+        try:
+            indices.append(int(entry, 0))
+        except ValueError:
+            raise TypeError(f'debug: {data!r} has index {entry!r}, not an integer') from None
+    dims = tensor_dims(mlir_type(global_counters[name]['type']))
+    if len(entries) > len(dims):
+        raise ValueError(
+            f'debug: {data!r} gives {len(entries)} indices for the {len(dims)} dimensions of {name}'
+        )
+    return name, indices
+
+
+def check_window(instruction, buffer, starts, window_t, buffer_t):
+    """Refuse a window outside its buffer at any iteration of its loops"""
+    dims = zip(starts, tensor_dims(window_t), tensor_dims(buffer_t))
+    for k, (start, size, extent) in enumerate(dims):
+        # A literal start as a LoopValue over no loops
+        read = start if isinstance(start, LoopValue) else LoopValue(literal(start), {})
+        for env in iterations(read.value, read.loops):
+            at = evaluate(read.value, env)
+            if at < 0 or at + size > extent:
+                iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
+                raise ValueError(
+                    f'{instruction}: window [{at}:{at + size}] on dimension {k} of {buffer} '
+                    f'runs outside its extent {extent}' + (f' at {iteration}' if env else '')
+                )
+
+
 def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
     lines, locs = index_constants(lhs, starts)
     t = mlir_type(lhs_type)

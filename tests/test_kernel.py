@@ -144,6 +144,49 @@ def test_debug_prints_values(capfd):
     np.testing.assert_allclose([float(v) for v in values], np.asarray(Q[0], np.float64), rtol=1e-5)
 
 
+# A debug call's buffer or index refused by name
+@pytest.mark.parametrize(
+    'data, error, message',
+    [
+        (
+            'd1[200]',
+            ValueError,
+            'window [200:201] on dimension 0 of d1 runs outside its extent 128',
+        ),
+        ('d1[-3]', ValueError, 'window [-3:-2] on dimension 0 of d1 runs outside its extent 128'),
+        ('d9[0]', ValueError, "'d9[0]' names no buffer"),
+        ('d1', ValueError, "'d1' gives no index; 'd1[:]' prints the whole buffer"),
+        ('d1[]', ValueError, "'d1[]' gives no index; 'd1[:]' prints the whole buffer"),
+        ('d1[0.5]', TypeError, "'d1[0.5]' has index '0.5', not an integer"),
+        ('d1[0, 0, 0]', ValueError, "'d1[0, 0, 0]' gives 3 indices for the 2 dimensions of d1"),
+    ],
+    ids=['end', 'start', 'buffer', 'missing', 'empty', 'fraction', 'extra'],
+)
+def test_debug_index_refused(data, error, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.debug(prefix='d1', data=data)
+
+    with pytest.raises(error) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'debug: {message}'
+
+
+# A bare ':' prints the whole buffer, any integer literal a row
+@pytest.mark.parametrize('data, shape', [('d1[:]', '(128, 64)'), ('d1[0x10]', '(1, 64)')])
+def test_debug_index_forms_print(capfd, data, shape):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.debug(prefix='d1', data=data)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    k('fsim-compile')()
+    k('fsim')(*load_qkv())
+    assert f'shape: {shape}' in capfd.readouterr().out.splitlines()
+
+
 def test_generation_rebuilds_the_debug_handler():
     start = time.time()
     build_dir = os.path.join(generate_example(MINI_TRN_DIR), 'oracle', 'build')
@@ -530,6 +573,97 @@ def test_loop_matches_unrolled(twin):
         os.path.join(MINI_TRN_DIR, 'data'),
     )
     assert np.asarray(outputs[0]).tobytes() == np.asarray(unrolled).tobytes()
+
+
+# A window past either end of d1 or of HBM
+@pytest.mark.parametrize(
+    'name, values, message',
+    [
+        ('load_rm', {'addr_in': 0, 'addr_out': 100}, '[100:164] on dimension 0 of d1'),
+        ('load_rm', {'addr_in': 0, 'addr_out': -8}, '[-8:56] on dimension 0 of d1'),
+        ('load_rm', {'addr_in': 28672, 'addr_out': 0}, '[28672:36864] on dimension 0 of d0'),
+        ('store_rm', {'addr_in': 0, 'addr_out': 28672}, '[28672:36864] on dimension 0 of d0'),
+        ('store_rm', {'addr_in': 0, 'addr_out': -8}, '[-8:8184] on dimension 0 of d0'),
+    ],
+    ids=['end', 'start', 'hbm_read', 'hbm_write', 'hbm_start'],
+)
+def test_window_outside_buffer_refused(name, values, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        getattr(api, name)(n=64, **values)
+
+    extent = 128 if message.endswith('d1') else 32768
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'{name}: window {message} runs outside its extent {extent}'
+
+
+def past_last():
+    """Rows past d1 at the last iteration alone"""
+    api.start_loop('i', 0, 3)
+    api.load_rm(n=32, addr_in=0, addr_out='50 * %i')
+    api.end_loop()
+
+
+def past_nested():
+    """Rows past d1 at one iteration of an inner loop"""
+    api.start_loop('i', 0, 2)
+    api.start_loop('j', 0, 4)
+    api.load_rm(n=16, addr_in=0, addr_out='96 * %i + 16 * %j')
+    api.end_loop()
+    api.end_loop()
+
+
+# A looped window past d1, its iteration named
+@pytest.mark.parametrize(
+    'body, message',
+    [
+        (past_last, '[100:132] on dimension 0 of d1 runs outside its extent 128 at %i = 2'),
+        (
+            past_nested,
+            '[128:144] on dimension 0 of d1 runs outside its extent 128 at %i = 1, %j = 2',
+        ),
+    ],
+    ids=['last', 'nested'],
+)
+def test_looped_window_outside_buffer_refused(body, message):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        body()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'load_rm: window {message}'
+
+
+# A size the call makes zero or negative, before any window
+@pytest.mark.parametrize('n, size', [(0, 0), (-1, -128)], ids=['zero', 'negative'])
+def test_size_not_positive_refused(n, size):
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=n, addr_in=0, addr_out=0)
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'load_rm: size `@c.n * 128` is {size}, not positive'
+
+
+# Calls in a loop with no iterations, never checked
+def test_loop_of_no_iteration_traces_nothing():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.start_loop('i', 0, 0)
+        api.load_rm(n=64, addr_in=8192, addr_out=100)
+        api.load_rm(n=64, addr_in=8192, addr_out='100 + %i')
+        api.debug(prefix='d1', data='d1[200]')
+        api.end_loop()
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    Q, K, V = load_qkv()
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
 
 
 # Two 8192-byte inputs that overlap or run past HBM
@@ -1129,6 +1263,8 @@ ENTRY {
     ROOT %Out0 = u8[1,8] reshape(%In0);
 }
 """)
+instr = shift.add_instruction('touch_rows', [], ['src', 'rows'])
+instr.set_inputs([['d0', ['@a.src'], ['@a.rows - 8']]])
 instr = shift.add_instruction('store_row', [], ['row', 'dst'])
 instr.set_inputs([['d1', ['@a.row'], ['1']]])
 instr.set_outputs([['d0', ['@a.dst'], ['8']]])
@@ -1168,3 +1304,37 @@ def test_start_over_looped_attribute_runs(looped):
     k('fsim-compile')()
     outputs, _ = k('fsim')(x)
     np.testing.assert_array_equal(np.asarray(outputs[0]), x[8:40])
+
+
+# A start over a looped attribute past HBM or past d1
+@pytest.mark.parametrize(
+    'src, message',
+    [
+        ('32 * %i', '[72:80] on dimension 0 of d0 runs outside its extent 72 at %i = 2'),
+        ('8 * %i', '[8:9] on dimension 0 of d1 runs outside its extent 8 at %i = 4'),
+    ],
+    ids=['hbm', 'buffer'],
+)
+def test_start_over_looped_attribute_outside_buffer_refused(src, message):
+    @shift_kernel.kernel(hbm=72, input=SHIFT_INPUT, constant=[], output=SHIFT_OUTPUT)
+    def k():
+        shift_api.start_loop('i', 0, 5)
+        shift_api.load_past(src=src, row='%i')
+        shift_api.end_loop()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'load_past: window {message}'
+
+
+# A size over a looped attribute, zero at one iteration
+def test_size_over_looped_attribute_not_positive_refused():
+    @shift_kernel.kernel(hbm=72, input=SHIFT_INPUT, constant=[], output=SHIFT_OUTPUT)
+    def k():
+        shift_api.start_loop('i', 0, 2)
+        shift_api.touch_rows(src=0, rows='9 - %i')
+        shift_api.end_loop()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == 'touch_rows: size `@a.rows - 8` is 0 at %i = 1, not positive'

@@ -140,6 +140,9 @@ def end_loop():
 
 def debug(prefix: str, data: str) -> None:
     require_trace('debug')
+    # A call in a loop with no iterations traces nothing
+    if any(loop['start'] >= loop['end'] for loop in loop_stack):
+        return
     output = []
 
     # The handler prints the prefix up to a nul
@@ -152,25 +155,26 @@ def debug(prefix: str, data: str) -> None:
         prefix_string += f'{prefix_bytes[i]}'
     prefix_string += ']'
 
-    data_name = data.split('[')[0]
+    # A buffer and an integer index of its leading dims
+    data_name, debug_dims = debug_index(data, global_counters)
 
     rhs_loc = parameter_util(global_counters, data_name)
     data_dims = ast.literal_eval(
         '[' + global_counters[data_name]['type'].split('[')[1].split(']')[0] + ']'
     )
-    debug_dims = ast.literal_eval('[' + data.split('[')[1].split(']')[0] + ']')
     starts = []
     for i in range(len(debug_dims)):
         data_dims[i] = 1
     for i in range(len(data_dims)):
         data_dims[i] = str(data_dims[i])
         if i < len(debug_dims):
-            starts.append(str(debug_dims[i]))
+            starts.append(debug_dims[i])
         else:
-            starts.append('0')
+            starts.append(0)
 
     data_type = global_counters[data_name]['type'].split('[')[0]
     lhs_loc, lhs_type = lhs_util(global_counters, 'debug_slice', data_type, data_dims)
+    check_window('debug', data_name, starts, mlir_type(lhs_type), ssa_types[rhs_loc])
     line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types)
     output.append(line)
 
@@ -193,6 +197,9 @@ def debug(prefix: str, data: str) -> None:
 ### TEMPLATE: API_FUNC ###
 global comp_attrs
 require_trace({{name}})
+# A call in a loop with no iterations traces nothing
+if any(loop['start'] >= loop['end'] for loop in loop_stack):
+    return
 comp_attrs = {{set_comp_attr}}
 attrs = {{set_attributes}}
 # Each value an int or a loop expression
@@ -220,6 +227,7 @@ global_counters['instruction_counter'] += 1
 rhs_loc = parameter_util(global_counters, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 starts = {{starts}}
+check_window({{instruction}}, {{rhs_name}}, starts, mlir_type(lhs_type), ssa_types[rhs_loc])
 line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types)
 output.append(line)
 
@@ -228,8 +236,12 @@ rhs_update = parameter_util(global_counters, {{lhs}})
 rhs_loc = parameter_util(global_counters, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{rhs_name}})
 starts = {{starts}}
+check_window({{instruction}}, {{rhs_name}}, starts, ssa_types[rhs_update], ssa_types[rhs_loc])
 lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types)
 output += lines
+
+### TEMPLATE: CHECK_SIZES ###
+check_sizes({{instruction}}, {{sizes}}, {{dims}})
 
 ### TEMPLATE: RESHAPE ###
 rhs_loc = parameter_util(global_counters, {{in}})
