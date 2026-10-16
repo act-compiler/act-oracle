@@ -19,7 +19,7 @@ def parse_simple_expression(expression):
             current_sign = 1
         elif part == '-':
             current_sign = -1
-        elif part and part not in ['+', '-']:
+        elif part:
             # The term only has mult and division
             coeff, mult_vars, div_vars = parse_term(part)
             terms.append((current_sign * coeff, mult_vars, div_vars))

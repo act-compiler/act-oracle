@@ -16,8 +16,6 @@ WIDTH = 100
 
 def init_templates():
     filepath = os.path.join(TEMPLATES_DIR, 'templates.txt')
-    if templates:
-        return
     with open(filepath, 'r') as file:
         content = file.read()
     for section in content.split('### TEMPLATE: '):
@@ -25,6 +23,10 @@ def init_templates():
             header, body = section.split(' ###\n', 1)
             # Each template ends in one newline
             templates[header.strip()] = body.rstrip('\n') + '\n'
+
+
+# Read once, at import
+init_templates()
 
 
 def generate_code(template: str, inputs):

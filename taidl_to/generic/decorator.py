@@ -20,7 +20,7 @@ def set_simulation_backend(platform='CPU'):
     jax.config.update('jax_default_matmul_precision', 'highest')
     if platform == 'CPU':
         backend = get_backend('cpu')
-    elif platform == 'GPU':
+    else:
         backend = get_backend('gpu')
 
 
@@ -59,28 +59,24 @@ def kernel(hbm: int, input: list, output: list, constant=()):
             if mode not in ('fsim', 'fsim-compile'):
                 raise ValueError(f'unknown oracle mode {mode!r}')
 
-            def wrapper(f, *args, **kwargs):
-                if mode != 'fsim':
-                    f()
-
+            def wrapper(*args):
                 if mode == 'fsim-compile':
                     return input, api.compile_time
 
-                if mode == 'fsim':
-                    # The module lays the inputs into HBM
-                    assert len(args) == len(input), 'args != input'
-                    operands = []
-                    for arg, spec in zip(args, input):
-                        assert arg.shape == spec['shape'], 'arg.shape != input.shape'
-                        assert arg.dtype == spec['dtype'], 'arg.dtype != input.dtype'
-                        operands.append(jax.device_put(arg, device=device))
+                # The module lays the inputs into HBM
+                assert len(args) == len(input), 'args != input'
+                operands = []
+                for arg, spec in zip(args, input):
+                    assert arg.shape == spec['shape'], 'arg.shape != input.shape'
+                    assert arg.dtype == spec['dtype'], 'arg.dtype != input.dtype'
+                    operands.append(jax.device_put(arg, device=device))
 
-                    start = time.time()
-                    outputs = executable.execute(operands)
-                    jax.block_until_ready(outputs)
-                    elapsed = round((time.time() - start) * 1000, 3)
+                start = time.time()
+                outputs = executable.execute(operands)
+                jax.block_until_ready(outputs)
+                elapsed = round((time.time() - start) * 1000, 3)
 
-                    return outputs, elapsed
+                return outputs, elapsed
 
             api.mode = mode
             if backend is None:
@@ -94,7 +90,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 module = api.generate_module(hbm, input, constant, output)
                 executable, device, api.compile_time = compile_module(module)
 
-            return lambda *args, **kwargs: wrapper(func, *args, **kwargs)
+            return wrapper
 
         return launchable
 
