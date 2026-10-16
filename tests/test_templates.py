@@ -17,6 +17,7 @@ from conftest import (
     add_typed_instruction,
     assert_exact,
     byte_count,
+    check_oracle,
     each_type,
     import_oracle,
     run_typed,
@@ -503,3 +504,24 @@ def test_state_variable_in_the_api():
     generate_oracle(acc)
     with open(os.path.join(acc.base_dir, 'targets', 'STATE', 'oracle', 'api.py')) as file:
         assert "'mode': 3," in file.read()
+
+
+# A generic line of six operands, laid out as ruff lays it out
+def test_long_operand_list_laid_out():
+    acc = Accelerator('LAYOUT', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('patch', [], ['src', 'dst'])
+    instr.set_inputs([['d0', ['@a.src'], ['16']], ['d0', ['@a.src'], ['1']]])
+    instr.set_outputs([['d0', ['@a.dst'], ['16']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[16] parameter(0);
+    %In1 = u8[1] parameter(1);
+    %orig = u8[2,2,2,2] reshape(%In0);
+    %data = u8[1,1,1,1] reshape(%In1);
+    %zero = s32[] constant(0);
+    %fin = u8[2,2,2,2] dynamic_update_slice(%orig, %data, %zero, %zero, %zero, %zero);
+    ROOT %Out0 = u8[16] reshape(%fin);
+}
+""")
+    generate_oracle(acc)
+    check_oracle(os.path.join(acc.base_dir, 'targets', 'LAYOUT', 'oracle'))
