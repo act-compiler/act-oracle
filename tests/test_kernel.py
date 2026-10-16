@@ -1338,3 +1338,180 @@ def test_size_over_looped_attribute_not_positive_refused():
     with pytest.raises(ValueError) as refusal:
         k('fsim-compile')
     assert str(refusal.value) == 'touch_rows: size `@a.rows - 8` is 0 at %i = 1, not positive'
+
+
+# Tiles over regions sized at the call, in HBM
+sized = Accelerator('SIZED', base_dir=tempfile.mkdtemp())
+sized.add_data_model('d1', [4], [8], 'u8')
+for name, comp, size in (('load_n', ['n'], '@c.n'), ('load_rows', [], '@a.rows')):
+    instr = sized.add_instruction(name, comp, ['src'] + (['rows'] if not comp else []))
+    instr.set_inputs([['d0', ['@a.src'], [size]]])
+    instr.set_outputs([['d1', ['0'], ['1']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[8] parameter(0);
+    ROOT %Out0 = u8[1,8] reshape(%In0);
+}
+""")
+instr = sized.add_instruction('take_rows', [], ['src', 'rows'])
+instr.set_inputs([['d0', ['@a.src'], ['8']]])
+instr.set_outputs([['d1', ['0'], ['1']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@a.rows`] parameter(0);
+    ROOT %Out0 = u8[1,8] reshape(%In0);
+}
+""")
+instr = sized.add_instruction('store_n', ['n'], ['dst'])
+instr.set_inputs([['d1', ['0'], ['1']]])
+instr.set_outputs([['d0', ['@a.dst'], ['@c.n']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[1,8] parameter(0);
+    ROOT %Out0 = u8[8] reshape(%In0);
+}
+""")
+generate_oracle(sized)
+sized_kernel, sized_api = import_oracle(
+    os.path.join(sized.base_dir, 'targets', 'SIZED'), 'oracle_SIZED'
+)
+SIZED_INPUT = [{'addr': 0, 'shape': (16,), 'dtype': np.uint8}]
+SIZED_OUTPUT = [{'addr': 16, 'shape': (8,), 'dtype': np.uint8}]
+
+
+def sized_at_call():
+    sized_api.load_n(n=8, src=8)
+
+
+def sized_in_loop():
+    sized_api.start_loop('i', 0, 1)
+    sized_api.load_rows(src=8, rows='8 + %i')
+    sized_api.end_loop()
+
+
+def tile_in_loop():
+    sized_api.start_loop('i', 0, 2)
+    sized_api.take_rows(src=8, rows='8 + %i / 2')
+    sized_api.end_loop()
+
+
+# A tile whose region has its shape at the call
+@pytest.mark.parametrize(
+    'load', [sized_at_call, sized_in_loop, tile_in_loop], ids=['call', 'looped', 'looped_tile']
+)
+def test_tile_of_its_region_shape_at_the_call_runs(load):
+    x = np.arange(16, dtype=np.uint8)
+
+    @sized_kernel.kernel(hbm=24, input=SIZED_INPUT, constant=[], output=SIZED_OUTPUT)
+    def k():
+        load()
+        sized_api.store_n(n=8, dst=16)
+
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x[8:16])
+
+
+def short_load():
+    sized_api.load_n(n=4, src=0)
+
+
+def short_store():
+    sized_api.load_n(n=8, src=0)
+    sized_api.store_n(n=4, dst=16)
+
+
+def grown_in_loop():
+    sized_api.start_loop('i', 0, 2)
+    sized_api.load_rows(src=0, rows='8 + %i')
+    sized_api.end_loop()
+
+
+def tile_grown_in_loop():
+    sized_api.start_loop('i', 0, 2)
+    sized_api.take_rows(src=0, rows='8 + %i')
+    sized_api.end_loop()
+
+
+# A tile unlike its region's shape at the call, its iteration named
+@pytest.mark.parametrize(
+    'body, message',
+    [
+        (short_load, "load_n: '%In0' is u8[8], not the shape [4] of its input region in d0"),
+        (short_store, "store_n: '%Out0' is u8[8], not the shape [4] of its output region in d0"),
+        (
+            grown_in_loop,
+            "load_rows: '%In0' is u8[8], not the shape [9] of its input region in d0 at %i = 1",
+        ),
+        (
+            tile_grown_in_loop,
+            "take_rows: '%In0' is u8[9], not the shape [8] of its input region in d0 at %i = 1",
+        ),
+    ],
+    ids=['input', 'output', 'looped', 'looped_tile'],
+)
+def test_tile_unlike_its_region_shape_at_the_call_refused(body, message):
+    @sized_kernel.kernel(hbm=24, input=SIZED_INPUT, constant=[], output=SIZED_OUTPUT)
+    def k():
+        body()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message
+
+
+# A tile of its region's element count in another shape, read and written row-major
+def test_tile_reshaped_to_its_region_runs():
+    acc = Accelerator('RESHAPED', base_dir=tempfile.mkdtemp())
+    acc.add_data_model('d1', [4], [8], 'u8')
+    instr = acc.add_instruction('load_t', [], ['src'])
+    instr.set_inputs([['d0', ['@a.src'], ['8']]])
+    instr.set_outputs([['d1', ['0'], ['1']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2,4] parameter(0);
+    ROOT %Out0 = u8[4,2] transpose(%In0), dimensions={1,0};
+}
+""")
+    instr = acc.add_instruction('store_t', [], ['dst'])
+    instr.set_inputs([['d1', ['0'], ['1']]])
+    instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[8] parameter(0);
+    ROOT %Out0 = u8[2,4] reshape(%In0);
+}
+""")
+    generate_oracle(acc)
+    decorator, reshaped = import_oracle(
+        os.path.join(acc.base_dir, 'targets', 'RESHAPED'), 'oracle_RESHAPED'
+    )
+    x = np.arange(8, dtype=np.uint8)
+
+    @decorator.kernel(
+        hbm=16,
+        input=[{'addr': 0, 'shape': (8,), 'dtype': np.uint8}],
+        constant=[],
+        output=[{'addr': 8, 'shape': (8,), 'dtype': np.uint8}],
+    )
+    def k():
+        reshaped.load_t(src=0)
+        reshaped.store_t(dst=8)
+
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x.reshape(2, 4).T.reshape(-1))
+
+
+# load_cm at an n other than 64, its [64, n] tile laid row-major into n rows
+def test_load_cm_at_any_n_runs():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def k():
+        api.load_cm(n=32, addr_in=0, addr_out=0)
+        api.store_rm(n=32, addr_in=0, addr_out=24576)
+
+    Q, K, V = load_qkv()
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(Q, K, V)
+    expected = np.asarray(Q)[:32].T.reshape(32, 64)
+    assert np.asarray(outputs[0])[:32].tobytes() == expected.tobytes()

@@ -225,19 +225,31 @@ global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: SLICE_LOAD ###
 rhs_loc = parameter_util(global_counters, {{rhs_name}})
-lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
+check_tile({{instruction}}, {{lhs}}, 'input', {{rhs_name}}, {{type}}, {{tile}}, {{size}})
+lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, tile_shape({{tile}}, {{size}}))
 starts = {{starts}}
-check_window({{instruction}}, {{rhs_name}}, starts, mlir_type(lhs_type), ssa_types[rhs_loc])
-line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types)
+window_t = window_type({{type}}, {{size}}, mlir_type(lhs_type))
+check_window({{instruction}}, {{rhs_name}}, starts, window_t, ssa_types[rhs_loc])
+line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types, window_t)
 output.append(line)
 
 ### TEMPLATE: SLICE_STORE ###
 rhs_update = parameter_util(global_counters, {{lhs}})
 rhs_loc = parameter_util(global_counters, {{rhs_name}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{rhs_name}})
+check_tile(
+    {{instruction}},
+    {{lhs}},
+    'output',
+    {{rhs_name}},
+    {{type}},
+    tensor_dims(ssa_types[rhs_update]),
+    {{size}},
+)
 starts = {{starts}}
-check_window({{instruction}}, {{rhs_name}}, starts, ssa_types[rhs_update], ssa_types[rhs_loc])
-lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types)
+window_t = window_type({{type}}, {{size}}, ssa_types[rhs_update])
+check_window({{instruction}}, {{rhs_name}}, starts, window_t, ssa_types[rhs_loc])
+lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types, window_t)
 output += lines
 
 ### TEMPLATE: CHECK_SIZES ###

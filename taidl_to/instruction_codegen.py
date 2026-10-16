@@ -5,7 +5,7 @@ from collections import Counter
 
 from taidl import Instruction
 
-from .expression_writer import python
+from .expression_writer import integer, python
 from .semantic_generator import generate_semantic_code
 from .template import dict_text, generate_code, indent_code, layout, templates
 
@@ -20,6 +20,14 @@ SHARED_NAMES = {
 }
 
 
+def tile_dims(instruction: Instruction, value: str) -> list:
+    """A tile's dims as Python, as its semantics declares them"""
+    lines = instruction.instr_semantics_ast.instruction()
+    line = next(line for line in lines if line.IDENTIFIER().getText() == value)
+    shape = line.result_type().shape()
+    return [integer(dim, instruction.instr_expression_asts) for dim in shape.dim()] if shape else []
+
+
 def generate_inputs(instruction: Instruction) -> str:
     """Generate input loading code from instruction's instr_input_asts"""
     output = ''
@@ -30,6 +38,10 @@ def generate_inputs(instruction: Instruction) -> str:
         # Starts and sizes as Python evaluated at each call
         size_list = [python(size) for size in sizes] + [str(dim) for dim in model.unit_dim]
         start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
+        # The tile's dims, or its region's sizes with no semantics
+        tile_list = size_list
+        if instruction.instr_semantics_ast:
+            tile_list = tile_dims(instruction, f'%In{counter}')
 
         mapping = {
             'instruction': f"'{instruction.instruction}'",
@@ -37,6 +49,7 @@ def generate_inputs(instruction: Instruction) -> str:
             'lhs': f"'In{counter}'",
             'type': f"'{model.var_type}'",
             'size': '[' + ', '.join(size_list) + ']',
+            'tile': '[' + ', '.join(tile_list) + ']',
             'starts': '[' + ', '.join(start_list) + ']',
         }
         output += generate_code(templates['SLICE_LOAD'], mapping)
@@ -48,15 +61,18 @@ def generate_outputs(instruction: Instruction) -> str:
     """Generate output storing code from instruction's instr_output_asts"""
     code_output = ''
 
-    for counter, (buffer_name, starts, _) in enumerate(instruction.instr_output_asts):
+    for counter, (buffer_name, starts, sizes) in enumerate(instruction.instr_output_asts):
         model = instruction.find_data_model(buffer_name)
 
+        size_list = [python(size) for size in sizes] + [str(dim) for dim in model.unit_dim]
         start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
 
         mapping = {
             'instruction': f"'{instruction.instruction}'",
             'lhs': f"'Out{counter}'",
             'rhs_name': f"'{buffer_name}'",
+            'type': f"'{model.var_type}'",
+            'size': '[' + ', '.join(size_list) + ']',
             'starts': '[' + ', '.join(start_list) + ']',
         }
         code_output += generate_code(templates['SLICE_STORE'], mapping)
