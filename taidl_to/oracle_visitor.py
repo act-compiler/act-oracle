@@ -5,8 +5,8 @@ import re
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import integer, python
+from .generic.shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
-from .shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .template import generate_code, templates
 
 # Element types as a semantics spells them

@@ -2,8 +2,8 @@
 
 import re
 
+from .generic.shapes import count, declared, text
 from .oracle_visitor import OracleVisitor
-from .shapes import count, declared, text
 
 # The trace's counters, and the value the loop counter numbers
 TRACE_NAMES = {'instruction_counter', 'total_loop_counter', 'loop_var', 'loop_final'}
