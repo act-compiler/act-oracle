@@ -14,6 +14,8 @@ FLOATS = ('f64', 'f32', 'f16', 'bf16', 'f8e4m3fn', 'f8e5m2')
 SIGNED = ('s2', 's4', 's8', 's16', 's32', 's64')
 INTEGERS = ('u2', 'u4', 'u8', 'u16', 'u32', 'u64', *SIGNED)
 EVERY = (*FLOATS, *INTEGERS, 'pred')
+# Every type but the 2-bit integers
+EVERY_BUT_2_BIT = tuple(t for t in EVERY if t not in ('s2', 'u2'))
 
 # Each word's element types, at its first operand or result
 TYPES = {
@@ -31,7 +33,7 @@ TYPES = {
     'maximum': EVERY,
     'minimum': EVERY,
     'xor': (*INTEGERS, 'pred'),
-    'dot': EVERY,
+    'dot': EVERY_BUT_2_BIT,
     'reduce_add': EVERY,
     'reduce_multiply': EVERY,
     'reduce_max': EVERY,
@@ -86,7 +88,7 @@ TYPES = {
     'clamp': EVERY,
     'slice': EVERY,
     'dynamic_slice': EVERY,
-    'concatenate': EVERY,
+    'concatenate': EVERY_BUT_2_BIT,
     'pad': EVERY,
     'reverse': EVERY,
     'dynamic_update_slice': EVERY,
@@ -216,11 +218,16 @@ class OracleVisitor(IDLV2Visitor):
         # A word at a type it lacks, constant literals aside
         values = [] if op_name == 'constant' else operand_names
         typ = self.values[values[0]][0] if values else lhs_type
-        if typ not in TYPES[op_name]:
-            raise NotImplementedError(
-                f"{self.instruction}: operation '{op_name}' at type '{typ}' "
-                'is not supported by the oracle'
-            )
+        types = [typ]
+        if op_name == 'dot':
+            # A dot at each operand's type and its result's
+            types = [self.values[name][0] for name in values] + [lhs_type]
+        for each in types:
+            if each not in TYPES[op_name]:
+                raise NotImplementedError(
+                    f"{self.instruction}: operation '{op_name}' at type '{each}' "
+                    'is not supported by the oracle'
+                )
         for name in operand_names[INDICES.get(op_name, len(operand_names)) :]:
             if self.values[name][0] not in INTEGERS:
                 raise NotImplementedError(

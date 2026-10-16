@@ -445,6 +445,68 @@ def test_disagreeing_shapes_and_attributes_refused(case):
         generate_oracle(acc)
 
 
+# dot and concatenate at a 2-bit type, each line's %z of n elements
+TWO_BIT_LINES = {
+    'dot': (
+        """%y = {t}[2,2] dot(%x, %x), lhs_contracting_dims={{1}}, rhs_contracting_dims={{0}};
+    %z = {t}[4] reshape(%y);""",
+        4,
+    ),
+    'concatenate': ('%z = {t}[8] concatenate(%a, %a), dimensions={{0}};', 8),
+}
+
+
+@pytest.mark.parametrize('t', ['s2', 'u2'])
+@pytest.mark.parametrize('word', TWO_BIT_LINES)
+def test_dot_and_concatenate_at_a_2_bit_type_refused(word, t):
+    line, n = TWO_BIT_LINES[word]
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr'], [str(n)]]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[4] parameter(0);
+    %a = {t}[4] convert(%In0);
+    %x = {t}[2,2] reshape(%a);
+    {line.format(t=t)}
+    ROOT %Out0 = u8[{n}] convert(%z);
+}}
+""")
+    message = f"refused: operation '{word}' at type '{t}' is not supported by the oracle"
+    with pytest.raises(NotImplementedError, match=re.escape(message)):
+        generate_oracle(acc)
+
+
+# A dot of an s8 and an s2 operand, then of s8 operands to an s2 result
+MIXED_DOTS = {
+    'operand': '%y = s8[2,2] dot(%x, %w), lhs_contracting_dims={1}, rhs_contracting_dims={0};',
+    'result': '%y = s2[2,2] dot(%x, %x), lhs_contracting_dims={1}, rhs_contracting_dims={0};',
+}
+
+
+@pytest.mark.parametrize('line', MIXED_DOTS.values(), ids=MIXED_DOTS.keys())
+def test_dot_mixed_with_a_2_bit_type_refused(line):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['4']]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[4] parameter(0);
+    %a = s8[4] convert(%In0);
+    %x = s8[2,2] reshape(%a);
+    %w = s2[2,2] convert(%x);
+    {line}
+    %z = u8[2,2] convert(%y);
+    ROOT %Out0 = u8[4] reshape(%z);
+}}
+""")
+    message = "refused: operation 'dot' at type 's2' is not supported by the oracle"
+    with pytest.raises(NotImplementedError, match=re.escape(message)):
+        generate_oracle(acc)
+
+
 def two_bytes(base_dir, name, line):
     """Accelerator REGENERATED, its one instruction ending in line"""
     acc = Accelerator('REGENERATED', base_dir=base_dir)
