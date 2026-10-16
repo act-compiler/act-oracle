@@ -25,6 +25,9 @@ instruction_scopes = defaultdict(list)
 loop_stack = []
 cur_scope = 'main'
 
+# The open loops, their calls deferred until the outermost ends
+deferred = []
+
 
 def require_trace(name):
     # Calls record only inside a kernel body
@@ -33,8 +36,8 @@ def require_trace(name):
 
 
 def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list):
-    if loop_stack:
-        raise ValueError(f'loop {loop_stack[-1]["var"]} has no end_loop')
+    if deferred:
+        raise ValueError(f'loop {deferred[-1]["var"]} has no end_loop')
     _, prologue = semantic_init(hbm_size)
     params, marshal = kernel_prologue(hbm_size, inputs, constants)
     epilogue, results, result_types = kernel_epilogue(
@@ -56,7 +59,6 @@ def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list)
 
 
 def start_loop(var_name, start, end):
-    global cur_scope
     require_trace('start_loop')
     # A name a loop expression can read, not a parameter's
     if not isinstance(var_name, str):
@@ -73,10 +75,47 @@ def start_loop(var_name, start, end):
             raise TypeError(f'start_loop {var_name!r}: {bound} {value!r} is not an integer')
     start, end = int(start), int(end)
     # A variable no enclosing loop holds
-    if any(loop['var'] == '%' + var_name for loop in loop_stack):
+    if any(loop['var'] == '%' + var_name for loop in deferred):
         raise ValueError(f'start_loop {var_name!r}: loop variable %{var_name} is already in use')
+    deferred.append({'var': '%' + var_name, 'start': start, 'end': end, 'calls': []})
+
+
+def end_loop():
+    require_trace('end_loop')
+    if not deferred:
+        raise ValueError('end_loop has no start_loop')
+    loop = deferred.pop()
+    # An inner loop deferred as a call of its outer one
+    if deferred:
+        deferred[-1]['calls'].append(loop)
+    else:
+        trace_loop(loop)
+
+
+def defer(name, args):
+    # A call of an open loop, traced once the outermost ends
+    deferred[-1]['calls'].append((name, args))
+
+
+def trace_loop(loop):
+    # A loop with no iterations traces nothing
+    if loop['start'] >= loop['end']:
+        return
+    # A deferred loop's calls, traced in order as one stablehlo.while
+    open_loop(loop['var'], loop['start'], loop['end'])
+    for call in loop['calls']:
+        if isinstance(call, dict):
+            trace_loop(call)
+        else:
+            name, args = call
+            globals()[name](**args)
+    close_loop()
+
+
+def open_loop(var, start, end):
+    global cur_scope
     loop = {
-        'var': '%' + var_name,
+        'var': var,
         'id': global_counters['total_loop_counter'],
         'start': start,
         'end': end,
@@ -98,11 +137,8 @@ def start_loop(var_name, start, end):
     cur_scope = f'loop{loop["id"]}'
 
 
-def end_loop():
+def close_loop():
     global cur_scope
-    require_trace('end_loop')
-    if not loop_stack:
-        raise ValueError('end_loop has no start_loop')
     loop = loop_stack.pop()
     body = instruction_scopes.pop(cur_scope, [])
     cur_scope = loop['parent']
@@ -140,8 +176,8 @@ def end_loop():
 
 def debug(prefix: str, data: str) -> None:
     require_trace('debug')
-    # A call in a loop with no iterations traces nothing
-    if any(loop['start'] >= loop['end'] for loop in loop_stack):
+    if deferred:
+        defer('debug', locals())
         return
     output = []
 
@@ -197,8 +233,8 @@ def debug(prefix: str, data: str) -> None:
 ### TEMPLATE: API_FUNC ###
 global comp_attrs
 require_trace({{name}})
-# A call in a loop with no iterations traces nothing
-if any(loop['start'] >= loop['end'] for loop in loop_stack):
+if deferred:
+    defer({{name}}, locals())
     return
 comp_attrs = {{set_comp_attr}}
 attrs = {{set_attributes}}
