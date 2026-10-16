@@ -6,7 +6,18 @@ import tempfile
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from conftest import import_oracle
+from conftest import (
+    DTYPES,
+    FLOATS,
+    LOWERED,
+    PLATFORM,
+    ULPS,
+    add_typed_instruction,
+    each_type,
+    import_oracle,
+    run_typed,
+    ulps,
+)
 from taidl import Accelerator
 
 from taidl_to import generate_oracle
@@ -204,6 +215,52 @@ ENTRY {
 }
 """)
 
+# Each lowered word: its line, %y's shape, NumPy's %y
+LINES = {
+    'add': ('%y = {t}[2,2] add(%x0, %x1);', [2, 2], lambda x, y: x + y),
+    'subtract': ('%y = {t}[2,2] subtract(%x0, %x1);', [2, 2], lambda x, y: x - y),
+    'multiply': ('%y = {t}[2,2] multiply(%x0, %x1);', [2, 2], lambda x, y: x * y),
+    'divide': (
+        '%y = {t}[2,2] divide(%x0, %x1);',
+        [2, 2],
+        lambda x, y: x / y if x.dtype.kind == 'f' else x // y,
+    ),
+    'maximum': ('%y = {t}[2,2] maximum(%x0, %x1);', [2, 2], np.maximum),
+    'minimum': ('%y = {t}[2,2] minimum(%x0, %x1);', [2, 2], np.minimum),
+    'xor': ('%y = {t}[2,2] xor(%x0, %x1);', [2, 2], np.bitwise_xor),
+    'exponential': ('%y = {t}[2,2] exponential(%x0);', [2, 2], lambda x, y: np.exp(x)),
+    'convert': (
+        '%w = f32[2,2] convert(%x0);\n    %y = {t}[2,2] convert(%w);',
+        [2, 2],
+        lambda x, y: x,
+    ),
+    'bitcast_convert': ('%y = {t}[2,2] bitcast_convert(%x0);', [2, 2], lambda x, y: x),
+    'copy': ('%y = {t}[2,2] copy(%x0);', [2, 2], lambda x, y: x),
+    'reshape': ('%y = {t}[4] reshape(%x0);', [4], lambda x, y: x.reshape(4)),
+    'transpose': ('%y = {t}[2,2] transpose(%x0), dimensions={{1,0}};', [2, 2], lambda x, y: x.T),
+    'broadcast': (
+        '%y = {t}[2,2,2] broadcast(%x0), dimensions={{1,2}};',
+        [2, 2, 2],
+        lambda x, y: np.broadcast_to(x, (2, 2, 2)),
+    ),
+    'dot': (
+        '%y = {t}[2,2] dot(%x0, %x1), lhs_contracting_dims={{1}}, rhs_contracting_dims={{0}};',
+        [2, 2],
+        lambda x, y: x @ y,
+    ),
+    'reduce_add': (
+        '%y = {t}[2] reduce_add(%x0), dimensions={{1}};',
+        [2],
+        lambda x, y: x.sum(axis=1),
+    ),
+}
+
+# One instruction per lowered word and type
+for word, (line, shape, _) in LINES.items():
+    for t in LOWERED[word]:
+        inputs = [(t, [2, 2]), (t, [2, 2])]
+        add_typed_instruction(ops, f'{word}_{t}', inputs, line.format(t=t), (t, shape))
+
 generate_oracle(ops)
 decorator, api = import_oracle(os.path.join(ops.base_dir, 'targets', 'OPS'), 'oracle_OPS')
 
@@ -280,6 +337,27 @@ def test_reduce_add_types(t):
     x = jnp.asarray(rng.integers(0, 2, (64, 64)), dtype=TYPES[t])
     out = run(f'sum_{t}', [x], (64,), TYPES[t])
     np.testing.assert_array_equal(out, np.asarray(x, np.float64).sum(axis=1))
+
+
+@pytest.mark.parametrize('word', LINES)
+def test_operation_at_each_type_it_takes(word):
+    _, shape, reference = LINES[word]
+
+    def check(t):
+        # Small values keep results exact; a pred's 0 or 1
+        low, high = (0, 2) if t == 'pred' else (1, 4)
+        x, y = (rng.integers(low, high, (2, 2)).astype(DTYPES[t]) for _ in range(2))
+        out = run_typed(decorator, api, f'{word}_{t}', [x, y], (t, shape))
+        wide = np.float64 if t in FLOATS else np.int64
+        expected = np.asarray(reference(x.astype(wide), y.astype(wide)))
+        if word == 'exponential':
+            # Twice the CPU's ulps on a GPU
+            assert ulps(out, expected, t) <= ULPS[t] * (2 if PLATFORM == 'GPU' else 1)
+        else:
+            exact = expected.astype(DTYPES[t]).astype(np.float64)
+            np.testing.assert_array_equal(out.astype(np.float64), exact)
+
+    each_type(LOWERED[word], check)
 
 
 @pytest.mark.parametrize('name', BROADCASTS)

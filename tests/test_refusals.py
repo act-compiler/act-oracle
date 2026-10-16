@@ -8,21 +8,20 @@ import tempfile
 
 import pytest
 import taidl.antlr4
-from conftest import import_oracle
+from conftest import EVERY, LOWERED, each_type, import_oracle
 from taidl import Accelerator
 from taidl.operations import BOOL, INT, INTS, LITERAL, NUMBER, ONE_INT, OPERATIONS, RANGES
 
 from taidl_to import generate_oracle
-from taidl_to.oracle_visitor import OracleVisitor
 
 
 def unmapped():
-    """The words the grammar lexes that no template lowers."""
+    """The words the grammar lexes that the table of lowered words leaves out."""
     with open(os.path.join(os.path.dirname(taidl.antlr4.__file__), 'IDLV2.g4')) as file:
         grammar = re.sub(r'//.*', '', file.read())
     rule = re.search(r'^OPERATION\s*:(.*?);', grammar, re.MULTILINE | re.DOTALL).group(1)
     # parameter declares an input, with no template of its own
-    lowered = {'parameter', *OracleVisitor('t', {}).op_to_template}
+    lowered = {'parameter', *LOWERED}
     return [word for word in re.findall(r"'([^']+)'", rule) if word not in lowered]
 
 
@@ -59,6 +58,76 @@ ENTRY {{
 }}
 """)
     with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
+        generate_oracle(acc)
+
+
+@pytest.mark.parametrize('word', [word for word, types in LOWERED.items() if types != EVERY])
+def test_operation_at_a_type_it_does_not_take_refused(word):
+    operands = ', '.join(['%a'] * OPERATIONS[word][0])
+
+    def check(t):
+        acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+        instr = acc.add_instruction('refused', [], ['addr'])
+        instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+        instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+        instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[2] parameter(0);
+    %a = {t}[2] convert(%In0);
+    %b = {t}[2] {word}({operands});
+    ROOT %Out0 = u8[2] convert(%b);
+}}
+""")
+        with pytest.raises(NotImplementedError, match=f"refused: operation '{word}' at type '{t}'"):
+            generate_oracle(acc)
+
+    each_type([t for t in EVERY if t not in LOWERED[word]], check)
+
+
+def test_state_update_refused():
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    acc.add_initial_state('count', 0)
+    instr = acc.add_instruction('refused', [], ['addr'], update=['@s.count = @s.count + 1'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In0);
+}
+""")
+    message = "refused: state update '@s.count = @s.count [+] 1' is not supported by the oracle"
+    with pytest.raises(NotImplementedError, match=message):
+        generate_oracle(acc)
+
+
+def test_outputs_with_no_semantics_refused():
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    with pytest.raises(ValueError, match="refused: no semantics gives '%Out0' for output region 0"):
+        generate_oracle(acc)
+
+
+@pytest.mark.parametrize('kind', ['input', 'output'])
+def test_value_with_no_region_refused(kind):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    # The other kind's region alone
+    region = [['d0', ['@a.addr'], ['2']]]
+    if kind == 'input':
+        instr.set_outputs(region)
+    else:
+        instr.set_inputs(region)
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In0);
+}
+""")
+    value = '%In0' if kind == 'input' else '%Out0'
+    with pytest.raises(ValueError, match=f"refused: '{value}' has no {kind} region"):
         generate_oracle(acc)
 
 
@@ -138,6 +207,32 @@ def test_failed_build_leaves_no_oracle(monkeypatch):
     with pytest.raises(subprocess.CalledProcessError):
         generate_oracle(two_bytes(base_dir, 'second', COPY))
     assert os.listdir(os.path.join(base_dir, 'targets', 'REGENERATED')) == []
+
+
+# An input and an output typed unlike d0's u8
+UNLIKE = {
+    '%In0': """
+    %In0 = bf16[1] parameter(0);
+    %a = u8[1,2] bitcast_convert(%In0);
+    ROOT %Out0 = u8[2] reshape(%a);""",
+    '%Out0': """
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = s8[2] convert(%In0);""",
+}
+
+
+@pytest.mark.parametrize('value', UNLIKE)
+def test_tile_typed_unlike_its_data_model_refused(value):
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics(f'ENTRY {{{UNLIKE[value]}\n}}')
+    typ = 'bf16' if value == '%In0' else 's8'
+    with pytest.raises(
+        ValueError, match=f"refused: '{value}' is {typ}, its data model d0 holds u8"
+    ):
+        generate_oracle(acc)
 
 
 def test_expression_in_a_list_attribute_refused():
