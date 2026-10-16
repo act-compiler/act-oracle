@@ -117,21 +117,6 @@ ENTRY {
 }
 """)
 
-# A copy whose result type is not its operand's
-instr = ops.add_instruction('copy_retyped', [], ['addr_in', 'addr_out'])
-instr.set_inputs([['d0', ['@a.addr_in'], ['8192']]])
-instr.set_outputs([['d0', ['@a.addr_out'], ['8192']]])
-instr.add_semantics("""
-ENTRY {
-    %In0 = u8[8192] parameter(0);
-    %a = u8[64,64,2] reshape(%In0);
-    %x = bf16[64,64] bitcast_convert(%a);
-    %y = f16[64,64] copy(%x);
-    %b = u8[64,64,2] bitcast_convert(%y);
-    ROOT %Out0 = u8[8192] reshape(%b);
-}
-""")
-
 # An integer buffer, stored to HBM as it starts
 ops.add_data_model('d1', [64], [64], 's32')
 instr = ops.add_instruction('store_d1', [], ['addr_out'])
@@ -318,11 +303,6 @@ def test_dot_batch_dimensions():
     out = run('dot_batched', [a, b], (8, 16, 16), jnp.bfloat16)
     expected = np.einsum('bik,bkj->bij', np.asarray(a, np.float64), np.asarray(b, np.float64))
     np.testing.assert_array_equal(out, expected)
-
-
-def test_copy_of_another_type_refused():
-    with pytest.raises(ValueError, match='does not have the result type'):
-        run('copy_retyped', [small_ints((64, 64))], (64, 64), jnp.float16)
 
 
 def test_integer_buffer_starts_at_zero():

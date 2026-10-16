@@ -3,6 +3,7 @@
 import re
 
 from .oracle_visitor import OracleVisitor
+from .shapes import count, declared, text
 
 # The trace's counters, and the value the loop counter numbers
 TRACE_NAMES = {'instruction_counter', 'total_loop_counter', 'loop_var', 'loop_final'}
@@ -17,9 +18,10 @@ def generate_semantic_code(instruction) -> str:
             )
         return ''
 
-    # Each value's type, as its line declares it
+    # Each value's type and dims, as its line declares them
     lines = instruction.instr_semantics_ast.instruction()
     types = {line.IDENTIFIER().getText(): line.result_type().TYPE().getText() for line in lines}
+    dims = {line.IDENTIFIER().getText(): declared(line.result_type()) for line in lines}
     # A value takes no data model's or trace's name
     reserved = TRACE_NAMES | {model.var_name for model in instruction.data_models}
     for value in types:
@@ -37,12 +39,20 @@ def generate_semantic_code(instruction) -> str:
             if not given and re.fullmatch(rf'%{kind}\d+', value):
                 raise ValueError(f"{instruction.instruction}: '{value}' has no {where} region")
         # Each tile has its data model's type
-        for k, (buffer, _, _) in enumerate(given):
+        for k, (buffer, _, sizes) in enumerate(given):
             value, model = f'%{kind}{k}', instruction.find_data_model(buffer)
             if types[value] != model.var_type:
                 raise ValueError(
                     f"{instruction.instruction}: '{value}' is {types[value]}, "
                     f'its data model {buffer} holds {model.var_type}'
+                )
+            # A tile holds no more elements than its region
+            region = [int(size.getText()) if size.getText().isdigit() else None for size in sizes]
+            tile, room = count(dims[value]), count(region + model.unit_dim)
+            if None not in (tile, room) and tile > room:
+                raise ValueError(
+                    f"{instruction.instruction}: '{value}' is {text((types[value], dims[value]))}, "
+                    f'more elements than the {room} of its {where} region in {buffer}'
                 )
 
     visitor = OracleVisitor(instruction.instruction, instruction.instr_expression_asts)
