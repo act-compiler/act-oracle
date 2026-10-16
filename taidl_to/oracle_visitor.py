@@ -4,7 +4,7 @@ import re
 
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
-from .expression_writer import python
+from .expression_writer import integer, python
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
 from .shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .template import generate_code, templates
@@ -361,25 +361,18 @@ class OracleVisitor(IDLV2Visitor):
         return str(int(text)) if re.fullmatch(r'-?[0-9]+', text) else text
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
-        return [self.integer_source(value_ctx) for value_ctx in ctx.value()]
+        return [integer(value_ctx, self.expressions) for value_ctx in ctx.value()]
 
     def visitSlice_list(self, ctx: IDLV2Parser.Slice_listContext):
         """Each range's start, limit and stride, the stride 1 unless given"""
         ranges, bounds = [], []
         for child in ctx.getChildren():
             if isinstance(child, IDLV2Parser.ValueContext):
-                bounds.append(self.integer_source(child))
+                bounds.append(integer(child, self.expressions))
             elif child.getText() == ']':
                 ranges.append((*bounds, '1')[:3])
                 bounds = []
         return ranges
-
-    def integer_source(self, ctx):
-        """An integer as Python: a literal's value, or an expression evaluated at each call"""
-        if ctx.EXPRESSION():
-            return python(self.expressions[ctx.EXPRESSION()])
-        # Drop a literal's leading zeros, which Python refuses
-        return str(int(ctx.getText()))
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
         # Refuse by name a type the oracle does not lower
@@ -396,7 +389,7 @@ class OracleVisitor(IDLV2Visitor):
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
-        dims = [self.integer_source(dim) for dim in ctx.dim()]
+        dims = [integer(dim, self.expressions) for dim in ctx.dim()]
         typ = ctx.parentCtx.TYPE().getText()
         return (', '.join(dims), typ)
 
