@@ -697,11 +697,6 @@ def check_tile(instruction, value, where, buffer, typ, tile, region):
             )
 
 
-def tile_shape(tile, region):
-    """A tile's dims, a looped one replaced by its region's size, which check_tile found equal"""
-    return [region[k] if isinstance(dim, LoopValue) else dim for k, dim in enumerate(tile)]
-
-
 def fixed(instruction, expression, value, given):
     """A value's one integer over its loops, refused by name where it changes"""
     if not isinstance(value, LoopValue):

@@ -1556,6 +1556,17 @@ ENTRY {
     ROOT %Out0 = u8[8] constant(`@a.v`);
 }
 """)
+instr = called.add_instruction('take', [], ['src', 'rows', 'dst'])
+instr.set_inputs([['d0', ['@a.src'], ['@a.rows']]])
+instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@a.rows`] parameter(0);
+    ROOT %Out0 = u8[8] copy(%In0);
+}
+""")
+instr = called.add_instruction('touch', [], ['src', 'rows'])
+instr.set_inputs([['d0', ['@a.src'], ['@a.rows']]])
 generate_oracle(called)
 called_kernel, called_api = import_oracle(
     os.path.join(called.base_dir, 'targets', 'CALLED'), 'oracle_CALLED'
@@ -1677,3 +1688,52 @@ def test_looped_value_changing_in_a_semantics_refused(body, message):
     with pytest.raises(ValueError) as refusal:
         k('fsim-compile')
     assert str(refusal.value) == message
+
+
+# A tile of one shape over its loop, against its unrolled twin
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
+def test_looped_tile_of_one_shape_runs(looped):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        if looped:
+            called_api.start_loop('i', 0, 2)
+            called_api.take(src='8 * %i', rows='8 + %i / 2', dst='32 + 8 * %i')
+            called_api.touch(src=0, rows='8 + %i / 2')
+            called_api.end_loop()
+        else:
+            for i in range(2):
+                called_api.take(src=8 * i, rows=8, dst=32 + 8 * i)
+                called_api.touch(src=0, rows=8)
+
+    x = np.arange(32, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), x[:16])
+
+
+def grown_take():
+    called_api.start_loop('i', 0, 2)
+    called_api.take(src=0, rows='8 + %i', dst=32)
+    called_api.end_loop()
+
+
+def grown_touch():
+    called_api.start_loop('i', 0, 2)
+    called_api.touch(src=0, rows='8 + %i')
+    called_api.end_loop()
+
+
+# A tile or a region whose looped shape changes over its loop
+@pytest.mark.parametrize(
+    'body, name', [(grown_take, 'take'), (grown_touch, 'touch')], ids=['tile', 'region']
+)
+def test_looped_tile_shape_refused(body, name):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        body()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == (
+        f"{name}: `@a.rows` with rows='8 + %i' changes over its loop: 8 at %i = 0 and 9 at %i = 1"
+    )
