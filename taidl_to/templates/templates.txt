@@ -255,6 +255,9 @@ output += lines
 ### TEMPLATE: CHECK_SIZES ###
 check_sizes({{instruction}}, {{sizes}}, {{dims}})
 
+### TEMPLATE: CHECK_SHAPES ###
+check_shapes({{instruction}}, {{op}}, {{result}}, {{operands}}, {{attributes}})
+
 ### TEMPLATE: RESHAPE ###
 rhs_loc = parameter_util(global_counters, {{in}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})

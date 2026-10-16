@@ -1515,3 +1515,105 @@ def test_load_cm_at_any_n_runs():
     outputs, _ = k('fsim')(Q, K, V)
     expected = np.asarray(Q)[:32].T.reshape(32, 64)
     assert np.asarray(outputs[0])[:32].tobytes() == expected.tobytes()
+
+
+# Lines whose shapes the call's values give
+called = Accelerator('CALLED', base_dir=tempfile.mkdtemp())
+called.add_data_model('d1', [8], [8], 'u8')
+instr = called.add_instruction('add_n', ['n'], ['src', 'dst'])
+instr.set_inputs([['d0', ['@a.src'], ['@c.n']], ['d0', ['@a.src'], ['8']]])
+instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@c.n`] parameter(0);
+    %In1 = u8[8] parameter(1);
+    ROOT %Out0 = u8[8] add(%In0, %In1);
+}
+""")
+instr = called.add_instruction('dot_k', ['k'], [])
+instr.set_inputs([['d1', ['0'], ['@c.k']], ['d1', ['0'], ['8']]])
+instr.set_outputs([['d1', ['0'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[`@c.k`,8] parameter(0);
+    %In1 = u8[8,8] parameter(1);
+    ROOT %Out0 = u8[8,8] dot(%In0, %In1), lhs_contracting_dims={0}, rhs_contracting_dims={0};
+}
+""")
+instr = called.add_instruction('slide', [], ['src', 'off', 'dst'])
+instr.set_inputs([['d0', ['@a.src'], ['16']]])
+instr.set_outputs([['d0', ['@a.dst'], ['8']]])
+instr.add_semantics("""
+ENTRY {
+    %In0 = u8[16] parameter(0);
+    ROOT %Out0 = u8[8] slice(%In0), slice={[`@a.off`:`@a.off + 8`]};
+}
+""")
+generate_oracle(called)
+called_kernel, called_api = import_oracle(
+    os.path.join(called.base_dir, 'targets', 'CALLED'), 'oracle_CALLED'
+)
+CALLED_INPUT = [{'addr': 0, 'shape': (32,), 'dtype': np.uint8}]
+CALLED_OUTPUT = [{'addr': 32, 'shape': (16,), 'dtype': np.uint8}]
+
+
+# Twice HBM's first sixteen bytes, at each call or in a loop
+@pytest.mark.parametrize('looped', [True, False], ids=['looped', 'unrolled'])
+def test_shapes_agreeing_at_the_call_run(looped):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        if looped:
+            called_api.start_loop('i', 0, 2)
+            called_api.add_n(n=8, src='8 * %i', dst='32 + 8 * %i')
+            called_api.end_loop()
+        else:
+            for i in range(2):
+                called_api.add_n(n=8, src=8 * i, dst=32 + 8 * i)
+
+    x = np.arange(32, dtype=np.uint8)
+    k('fsim-compile')()
+    outputs, _ = k('fsim')(x)
+    np.testing.assert_array_equal(np.asarray(outputs[0]), 2 * x[:16])
+
+
+def short_add():
+    called_api.add_n(n=4, src=0, dst=32)
+
+
+def short_dot():
+    called_api.dot_k(k=4)
+
+
+def slid_past():
+    called_api.start_loop('i', 0, 4)
+    called_api.slide(src=0, off='4 * %i', dst=32)
+    called_api.end_loop()
+
+
+# A line whose shapes disagree at the call, its iteration named
+@pytest.mark.parametrize(
+    'body, message',
+    [
+        (short_add, "add_n: add of '%Out0' takes operands of its shape u8[8], found '%In0' u8[4]"),
+        (
+            short_dot,
+            (
+                "dot_k: dot of '%Out0' pairs dimension 0 of '%In0' u8[4,8] "
+                "with dimension 0 of '%In1' u8[8,8]"
+            ),
+        ),
+        (
+            slid_past,
+            "slide: slice of '%Out0' takes ranges within '%In0' u8[16], found [12:20:1] at %i = 3",
+        ),
+    ],
+    ids=['elementwise', 'dot', 'looped'],
+)
+def test_shapes_disagreeing_at_the_call_refused(body, message):
+    @called_kernel.kernel(hbm=48, input=CALLED_INPUT, constant=[], output=CALLED_OUTPUT)
+    def k():
+        body()
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == message

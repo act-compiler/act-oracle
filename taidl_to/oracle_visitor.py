@@ -5,7 +5,7 @@ import re
 from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import integer, python
-from .generic.shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
+from .generic.shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement, known, numbers
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
 from .template import generate_code, templates
 
@@ -172,6 +172,22 @@ def generic_attributes(word, attributes, instruction):
     return '{' + ', '.join(f"'{name}': {source(value)}" for name, value in given.items()) + '}'
 
 
+def literal(values, attributes) -> bool:
+    """Whether a line's every dim and list entry is an integer, none an expression's"""
+    lists = [value for value in attributes.values() if not isinstance(value, str)]
+    items = [item for value in lists for item in value]
+    entries = [entry for item in items for entry in ([item] if isinstance(item, str) else item)]
+    return known([dim for _, dims in values for dim in dims] + numbers(entries))
+
+
+def checked(value):
+    """An attribute as Python for the check at the call: a scalar's text, a list evaluated"""
+    if isinstance(value, str):
+        return repr(value)
+    items = [item if isinstance(item, str) else f'({", ".join(item)})' for item in value]
+    return f'[{", ".join(items)}]'
+
+
 class OracleVisitor(IDLV2Visitor):
     def __init__(self, instruction, expressions) -> None:
         super().__init__()
@@ -181,6 +197,8 @@ class OracleVisitor(IDLV2Visitor):
         self.expressions = expressions
         # Each value's type and dims, by name
         self.values = {}
+        # Each value's dims as Python, evaluated at the call
+        self.dims = {}
         self.instruction_lines = []
 
         # Each word's template, the generic one where none is named
@@ -204,6 +222,10 @@ class OracleVisitor(IDLV2Visitor):
         lhs_type, lhs_shape = result_type_info
         op_name = ctx.OPERATION().getText()
         self.values[lhs_name] = (lhs_type, declared(ctx.result_type()))
+        shape = ctx.result_type().shape()
+        self.dims[lhs_name] = (
+            [integer(dim, self.expressions) for dim in shape.dim()] if shape else []
+        )
 
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
@@ -256,12 +278,33 @@ class OracleVisitor(IDLV2Visitor):
         reason = disagreement(op_name, self.values[lhs_name], operands, attributes)
         if reason:
             raise ValueError(f"{self.instruction}: {op_name} of '%{lhs_name}' {reason}")
+        # A line shaped by the call's values is checked at the call
+        lines = [self.values[name] for name in [lhs_name, *values]]
+        if not literal(lines, attributes):
+            self.check_shapes(op_name, lhs_name, values, attributes)
 
         self.generate_from_template(
             op_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
         )
 
         return (lhs_name, lhs_type, lhs_shape)
+
+    def check_shapes(self, op_name, lhs_name, values, attributes):
+        """Check a line's shapes and attributes with the call's values, at the call"""
+        typed = [
+            f"('%{name}', '{self.values[name][0]}', {source(self.dims[name])})"
+            for name in [lhs_name, *values]
+        ]
+        lists = ', '.join(f'{name!r}: {checked(value)}' for name, value in attributes.items())
+        mapping = {
+            'instruction': repr(self.instruction),
+            'op': repr(op_name),
+            'result': typed[0],
+            'operands': f'[{", ".join(typed[1:])}]',
+            'attributes': f'{{{lists}}}',
+        }
+        template_code = generate_code(templates['CHECK_SHAPES'], mapping)
+        self.instruction_lines += template_code.strip().split('\n')
 
     def generate_from_template(
         self, op_name, lhs_name, lhs_type, lhs_shape, operand_names, attributes
