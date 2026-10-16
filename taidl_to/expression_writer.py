@@ -1,4 +1,4 @@
-"""Python for a value taidl has parsed, read from a call's attributes and the state"""
+"""Python for a value or a condition taidl has parsed, read from a call's attributes and the state"""
 
 from taidl.antlr4 import IDLV2ExprParser, IDLV2ExprVisitor
 
@@ -39,8 +39,28 @@ class ExpressionWriter(IDLV2ExprVisitor):
         return self.visit(ctx.reference() or ctx.expression())
 
     def visitReference(self, ctx: IDLV2ExprParser.ReferenceContext):
-        text = ctx.getText()
-        return f"{TABLES[text[:3]]}['{text[3:]}']"
+        return reference(ctx.getText())
+
+
+class ConditionWriter(ExpressionWriter):
+    """A condition as one Python expression over `read`,
+    which maps each reference's text to its value."""
+
+    def visitCondition(self, ctx: IDLV2ExprParser.ConditionContext):
+        return ' or '.join(self.visit(conjunction) for conjunction in ctx.conjunction())
+
+    def visitConjunction(self, ctx: IDLV2ExprParser.ConjunctionContext):
+        return ' and '.join(self.visit(comparison) for comparison in ctx.comparison())
+
+    def visitComparison(self, ctx: IDLV2ExprParser.ComparisonContext):
+        # A bracketed condition keeps its brackets
+        if ctx.condition() is not None:
+            return f'({self.visit(ctx.condition())})'
+        left, right = ctx.additive()
+        return f'{self.visit(left)} {ctx.compare().getText()} {self.visit(right)}'
+
+    def visitReference(self, ctx: IDLV2ExprParser.ReferenceContext):
+        return f'read[{ctx.getText()!r}]'
 
 
 class References(IDLV2ExprVisitor):
@@ -54,6 +74,20 @@ class References(IDLV2ExprVisitor):
 
     def visitReference(self, ctx: IDLV2ExprParser.ReferenceContext):
         return [ctx.getText()]
+
+
+def reference(text: str) -> str:
+    """The Python that reads a reference from its dict."""
+    return f"{TABLES[text[:3]]}['{text[3:]}']"
+
+
+def condition(tree: IDLV2ExprParser.ConditionContext) -> tuple[str, str]:
+    """The Python of a condition over `read`, and of the dict `read`
+    from each reference's text to its value."""
+    read = ', '.join(
+        f'{text!r}: {reference(text)}' for text in dict.fromkeys(References().visit(tree))
+    )
+    return ConditionWriter().visit(tree), f'{{{read}}}'
 
 
 def python(tree: IDLV2ExprParser.ExpressionContext) -> str:
