@@ -62,12 +62,17 @@ def evaluate(value, env):
     return total
 
 
+def iterations(value, loops):
+    """Each binding of a value's loop variables over its loops, outer first"""
+    names = [var for var in loops if var in variables(value)]
+    for point in itertools.product(*(loops[var] for var in names)):
+        yield dict(zip(names, point))
+
+
 def divide(operator, a, b, loops):
     """a / b or a % b, floored as the language floors"""
     # Refuse a divisor zero at any iteration, naming it
-    names = [var for var in loops if var in variables(b)]
-    for point in itertools.product(*(loops[var] for var in names)):
-        env = dict(zip(names, point))
+    for env in iterations(b, loops):
         if evaluate(b, env) == 0:
             raise ZeroDivisionError(env)
     divisor = constant(b)
@@ -77,6 +82,16 @@ def divide(operator, a, b, loops):
     if divisor is not None and all(coeff % divisor == 0 for _, coeff in a):
         return merge((atoms, coeff // divisor) for atoms, coeff in a) if operator == '/' else ()
     return ((((operator, a, b),), 1),)
+
+
+# Each operator of the language on two values
+OPERATIONS = {
+    '+': lambda a, b, loops: merge(a + b),
+    '-': lambda a, b, loops: merge(a + multiply(literal(-1), b)),
+    '*': lambda a, b, loops: multiply(a, b),
+    '/': lambda a, b, loops: divide('/', a, b, loops),
+    '%': lambda a, b, loops: divide('%', a, b, loops),
+}
 
 
 def read_loop_expression(instruction, name, expression, loop_stack):
@@ -98,20 +113,13 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     def additive():
         value = multiplicative()
         while tokens[at] in ('+', '-'):
-            sign = -1 if take() == '-' else 1
-            value = merge(value + multiply(literal(sign), multiplicative()))
+            value = OPERATIONS[take()](value, multiplicative(), loops)
         return value
 
     def multiplicative():
         value = unary()
         while tokens[at] in ('*', '/', '%'):
-            operator = take()
-            operand = unary()
-            value = (
-                multiply(value, operand)
-                if operator == '*'
-                else divide(operator, value, operand, loops)
-            )
+            value = OPERATIONS[take()](value, unary(), loops)
         return value
 
     def unary():
@@ -144,9 +152,8 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     return value
 
 
-def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
-    """StableHLO lines computing a call's loop expression, and its SSA name"""
-    final_name = f'%loop_final.{global_counters["loop_var"]}'
+def value_lines(value, final_name):
+    """StableHLO lines computing a loop expression's value as final_name"""
     lines = []
 
     def emit(value, prefix):
@@ -181,11 +188,17 @@ def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_coun
         lines.append(f'{prefix} = stablehlo.divide {prefix}.s, {b} : tensor<i64>')
         return prefix
 
-    value = read_loop_expression(instruction, name, expression, loop_stack)
     total = emit(value, final_name)
     if total != final_name:
         lines.append(f'{final_name} = stablehlo.reshape {total} : (tensor<i64>) -> tensor<i64>')
-    return '\n'.join(lines) + '\n', final_name
+    return lines
+
+
+def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
+    """StableHLO lines computing a call's loop expression, and its SSA name"""
+    final_name = f'%loop_final.{global_counters["loop_var"]}'
+    value = read_loop_expression(instruction, name, expression, loop_stack)
+    return '\n'.join(value_lines(value, final_name)) + '\n', final_name
 
 
 def integral(value):
