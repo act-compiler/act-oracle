@@ -106,6 +106,7 @@ A word means what XLA-HLO says it means, in particular:
 - `select` takes a predicate of its branches' shape or of rank 0, as StableHLO allows.
 - `cholesky` leaves the triangle it does not compute as the implementation writes it.
 - `cholesky` and `triangular_solve` read a flag left out as `false`, as XLA-HLO does.
+- `triangular_solve` at `f16` solves at `f32` and rounds its result to `f16`, since XLA's GPU backend fails a solve at `f16`.
 - A list or a slice range may hold an expression in backticks, evaluated at each call; an attribute that is not a list, such as `iota_dimension` or `epsilon`, is a literal.
 
 ## What is refused
@@ -153,5 +154,3 @@ A word that reaches past its bound, on XLA's CPU or on an NVIDIA H100 NVL, is he
 | ----------------------- | ----- | -------- | --------- | -------- |
 | `exponential_minus_one` | `f16` | CPU      | 2.05 ulps | 4.1 ulps |
 | `sqrt`                  | `f32` | GPU      | 1 ulp     | 2 ulps   |
-
-XLA's GPU backend fails `triangular_solve` at `f16` when the kernel runs, so the GPU tests skip it by name; the CPU computes it exactly.

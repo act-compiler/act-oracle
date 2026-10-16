@@ -195,6 +195,7 @@ class OracleVisitor(IDLV2Visitor):
             **{word: 'REDUCE' for word in REDUCERS},
             'constant': 'CONSTANT',
             'iota': 'IOTA',
+            'triangular_solve': 'TRIANGULAR_SOLVE',
         }
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
@@ -271,7 +272,7 @@ class OracleVisitor(IDLV2Visitor):
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT']:
             mapping['in'] = f"'{operand_names[0]}'"
 
-        elif template_name == 'GENERIC':
+        elif template_name in ['GENERIC', 'TRIANGULAR_SOLVE']:
             dialect = 'chlo' if op_name in CHLO else 'stablehlo'
             mapping['op'] = f"'{dialect}.{op_name}'"
             mapping['operands'] = repr(operand_names)

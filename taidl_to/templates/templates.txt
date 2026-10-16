@@ -266,6 +266,12 @@ lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 line = sh_generic({{op}}, lhs_loc, lhs_type, operands, ssa_types, mlir_properties({{attributes}}))
 output.append(line)
 
+### TEMPLATE: TRIANGULAR_SOLVE ###
+operands = [parameter_util(global_counters, name) for name in {{operands}}]
+lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
+line = sh_triangular_solve(lhs_loc, lhs_type, operands, ssa_types, mlir_properties({{attributes}}))
+output.append(line)
+
 ### TEMPLATE: CONSTANT ###
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 line = sh_constant(lhs_loc, lhs_type, {{value}}, {{instruction}}, ssa_types)
