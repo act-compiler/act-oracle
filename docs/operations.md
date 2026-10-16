@@ -120,7 +120,6 @@ A `NotImplementedError` names what the oracle does not lower, a `ValueError` a c
 | a word at an element type the table above does not list for it                                                  | `NotImplementedError` |
 | an index of `dynamic_slice`, `dynamic_update_slice` or `gather` that is not an integer                          | `NotImplementedError` |
 | an expression in an attribute that is not a list, such as `iota_dimension` or `epsilon`                         | `NotImplementedError` |
-| a state update                                                                                                  | `NotImplementedError` |
 | a name the generated oracle keeps for itself, as an instruction, attribute, data model or value                 | `NotImplementedError` |
 | an output no semantics gives, or a value with no region of its kind                                             | `ValueError`          |
 | a tile typed unlike its data model, or holding more elements than its region                                    | `ValueError`          |
@@ -133,7 +132,7 @@ A `NotImplementedError` names what the oracle does not lower, a `ValueError` a c
 A tile is compared with its region at each call, at each iteration of its loops: one of the region's element count in another shape is read from or written to the region in row-major order where no loop sizes either, and any other tile whose shape differs is refused with a `ValueError`.
 A shape or a list entry written as an expression is known only at the call, so a disagreement it hides is refused at the call with a `ValueError`, naming the iteration at which a loop expression makes it disagree.
 A `constant` given by an expression is checked against its type at each call.
-An expression in a semantics that reads an attribute given as a loop expression must keep one value over the loop, and a call where that value changes is refused with a `ValueError`.
+An expression in a semantics that reads an attribute given as a loop expression must keep one value over the loop, and a call where that value changes is refused with a `ValueError`, unless the loop is unrolled around a state update, where each iteration runs at its own value.
 
 ## How the tests hold each word
 

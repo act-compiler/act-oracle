@@ -77,7 +77,9 @@ def start_loop(var_name, start, end):
     # A variable no enclosing loop holds
     if any(loop['var'] == '%' + var_name for loop in deferred):
         raise ValueError(f'start_loop {var_name!r}: loop variable %{var_name} is already in use')
-    deferred.append({'var': '%' + var_name, 'start': start, 'end': end, 'calls': []})
+    deferred.append(
+        {'var': '%' + var_name, 'start': start, 'end': end, 'calls': [], 'unrolled': False}
+    )
 
 
 def end_loop():
@@ -92,9 +94,13 @@ def end_loop():
         trace_loop(loop)
 
 
-def defer(name, args):
+def defer(name, args, updates=False):
     # A call of an open loop, traced once the outermost ends
     deferred[-1]['calls'].append((name, args))
+    # Each loop around a state update unrolled
+    if updates:
+        for loop in deferred:
+            loop['unrolled'] = True
 
 
 def trace_loop(loop):
@@ -102,14 +108,43 @@ def trace_loop(loop):
     if loop['start'] >= loop['end']:
         return
     # A deferred loop's calls, traced in order as one stablehlo.while
-    open_loop(loop['var'], loop['start'], loop['end'])
-    for call in loop['calls']:
+    if not loop['unrolled']:
+        open_loop(loop['var'], loop['start'], loop['end'])
+        trace_calls(loop['calls'])
+        close_loop()
+        return
+    # Else each iteration in turn, its variable bound to it
+    for at in range(loop['start'], loop['end']):
+        loop_stack.append({'var': loop['var'], 'at': at})
+        trace_calls(loop['calls'])
+        loop_stack.pop()
+
+
+def trace_calls(calls):
+    # Each deferred call in order, an inner loop traced whole
+    for call in calls:
         if isinstance(call, dict):
             trace_loop(call)
         else:
             name, args = call
-            globals()[name](**args)
-    close_loop()
+            try:
+                globals()[name](**args)
+            except (ValueError, TypeError) as error:
+                # A refusal names its unrolled loops' iterations, outer first
+                unrolled = [f'{loop["var"]} = {loop["at"]}' for loop in loop_stack if 'at' in loop]
+                if unrolled:
+                    error.args = (name_unrolled(str(error), unrolled),)
+                raise
+
+
+def name_unrolled(message, unrolled):
+    # The unrolled iterations, ahead of an inner while loop's it names
+    clauses = [f' at {loop["var"]} = ' for loop in loop_stack if 'at' not in loop]
+    named = [message.find(clause) for clause in clauses if clause in message]
+    if not named:
+        return f'{message} at {", ".join(unrolled)}'
+    start = min(named) + len(' at ')
+    return message[:start] + ', '.join(unrolled + [message[start:]])
 
 
 def open_loop(var, start, end):
@@ -234,7 +269,7 @@ def debug(prefix: str, data: str) -> None:
 global comp_attrs
 require_trace({{name}})
 if deferred:
-    defer({{name}}, locals())
+    defer({{name}}, locals(), {{updates}})
     return
 comp_attrs = {{set_comp_attr}}
 attrs = {{set_attributes}}
@@ -296,6 +331,9 @@ for env, read in bindings({{read}}):
             raise broken_constraint({{instruction}}, {{text}}, read, env)
     except ZeroDivisionError:
         raise ZeroDivisionError(env) from None
+
+### TEMPLATE: UPDATE_STATE ###
+{{target}} = bound({{value}}, {})
 
 ### TEMPLATE: CHECK_SIZES ###
 check_sizes({{instruction}}, {{sizes}}, {{dims}})

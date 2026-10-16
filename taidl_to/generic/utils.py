@@ -152,7 +152,11 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     An atom is a loop variable or a quotient (operator, a, b) of two values.
     """
     tokens = LOOP_TOKEN.findall(expression) + ['']
-    loops = {loop['var']: range(loop['start'], loop['end']) for loop in loop_stack}
+    loops = {
+        loop['var']: range(loop['start'], loop['end']) for loop in loop_stack if 'at' not in loop
+    }
+    # An unrolled loop's variable reads its iteration
+    unrolled = {loop['var']: loop['at'] for loop in loop_stack if 'at' in loop}
     unreadable = ValueError(f'{instruction}: {name} {expression!r} is not a loop expression')
     at = 0
 
@@ -191,6 +195,8 @@ def read_loop_expression(instruction, name, expression, loop_stack):
             return literal(int(token))
         if token in loops:
             return (((token,), 1),)
+        if token in unrolled:
+            return literal(unrolled[token])
         # A % followed by a name is a loop variable
         if len(token) > 1 and token[0] == '%':
             raise ValueError(
