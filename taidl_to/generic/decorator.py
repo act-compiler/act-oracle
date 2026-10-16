@@ -61,6 +61,24 @@ def compile_module(module: str):
 
 
 def check_declaration(name, hbm, input, constant, output):
+    def integer(x):
+        # An int or a NumPy integer, never a bool
+        return isinstance(x, (int, np.integer)) and not isinstance(x, bool)
+
+    # The HBM size, each addr and dimension an integer
+    if not integer(hbm):
+        raise TypeError(f'kernel {name!r}: hbm {hbm!r} is not an integer')
+    for kind, specs in (('input', input), ('constant', constant), ('output', output)):
+        for i, spec in enumerate(specs):
+            what = f'{kind} {i} of kernel {name!r}'
+            if not integer(spec['addr']):
+                raise TypeError(f'{what}: addr {spec["addr"]!r} is not an integer')
+            for dim in spec['shape']:
+                if not integer(dim):
+                    raise TypeError(
+                        f'{what}: shape {spec["shape"]} has dimension {dim!r}, not an integer'
+                    )
+
     # Each constant's value of its declared shape and dtype
     for i, const in enumerate(constant):
         what = f'constant {i} of kernel {name!r}'

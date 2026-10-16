@@ -461,6 +461,72 @@ def test_unlike_constant_refused(value, message):
     assert str(refusal.value) == message
 
 
+# Each non-integer a declaration may take
+@pytest.mark.parametrize(
+    'pieces, message',
+    [
+        ({'hbm': 32768.0}, "kernel 'copy_q': hbm 32768.0 is not an integer"),
+        (
+            {'input': [INPUT[0], dict(INPUT[1], addr=8192.0), INPUT[2]]},
+            "input 1 of kernel 'copy_q': addr 8192.0 is not an integer",
+        ),
+        (
+            {'input': [dict(INPUT[0], addr=True), *INPUT[1:]]},
+            "input 0 of kernel 'copy_q': addr True is not an integer",
+        ),
+        (
+            {'input': [*INPUT[:2], dict(INPUT[2], addr=np.bool_(True))]},
+            "input 2 of kernel 'copy_q': addr np.True_ is not an integer",
+        ),
+        (
+            {'input': [dict(INPUT[0], shape=(64.0, 64)), *INPUT[1:]]},
+            "input 0 of kernel 'copy_q': shape (64.0, 64) has dimension 64.0, not an integer",
+        ),
+        (
+            {'output': [dict(OUTPUT[0], addr=8192.5)]},
+            "output 0 of kernel 'copy_q': addr 8192.5 is not an integer",
+        ),
+        (
+            {'constant': [dict(INPUT[0], addr=0.7, value=np.zeros((64, 64), jnp.bfloat16))]},
+            "constant 0 of kernel 'copy_q': addr 0.7 is not an integer",
+        ),
+        (
+            {
+                'constant': [
+                    dict(INPUT[0], shape=(64, 64.0), value=np.zeros((64, 64), jnp.bfloat16))
+                ]
+            },
+            "constant 0 of kernel 'copy_q': shape (64, 64.0) has dimension 64.0, not an integer",
+        ),
+    ],
+    ids=['hbm', 'addr', 'bool', 'numpy-bool', 'shape', 'output', 'constant', 'constant-shape'],
+)
+def test_non_integer_declaration_refused(pieces, message):
+    @kernel(**({'hbm': 32768, 'input': INPUT, 'constant': [], 'output': OUTPUT} | pieces))
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(TypeError) as refusal:
+        copy_q('fsim-compile')()
+    assert str(refusal.value) == message
+
+
+def test_numpy_integer_declaration_runs():
+    # NumPy integers as the HBM size, an addr and a dimension
+    numpy_input = [*INPUT[:2], dict(INPUT[2], addr=np.int64(16384), shape=(np.int32(64), 64))]
+
+    @kernel(hbm=np.int64(32768), input=numpy_input, constant=[], output=OUTPUT)
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    copy_q('fsim-compile')()
+    Q, K, V = load_qkv()
+    outputs, _ = copy_q('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
+
+
 def test_kernel_keeps_its_executable():
     def copy(addr):
         """A kernel that copies the input at addr to the output"""
