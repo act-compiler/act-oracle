@@ -98,6 +98,9 @@ TYPES = {
     'batch_norm_inference': FLOATS,
 }
 
+# Words written in StableHLO's pretty form, each of its result's type throughout
+PRETTY = ('add', 'subtract', 'multiply', 'divide', 'maximum', 'minimum', 'xor', 'exponential')
+
 # The StableHLO op each reduce applies
 REDUCERS = {
     'reduce_add': 'add',
@@ -216,6 +219,7 @@ class OracleVisitor(IDLV2Visitor):
             'constant': 'CONSTANT',
             'iota': 'IOTA',
             'triangular_solve': 'TRIANGULAR_SOLVE',
+            **{word: 'PRETTY' for word in PRETTY},
         }
 
     def visitInstruction(self, ctx: IDLV2Parser.InstructionContext):
@@ -326,6 +330,10 @@ class OracleVisitor(IDLV2Visitor):
 
         if template_name in ['RESHAPE', 'CONVERT', 'COPY', 'BITCAST_CONVERT']:
             mapping['in'] = f"'{operand_names[0]}'"
+
+        elif template_name == 'PRETTY':
+            mapping['op'] = f"'stablehlo.{op_name}'"
+            mapping['operands'] = repr(operand_names)
 
         elif template_name in ['GENERIC', 'TRIANGULAR_SOLVE']:
             dialect = 'chlo' if op_name in CHLO else 'stablehlo'

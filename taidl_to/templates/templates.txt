@@ -420,6 +420,12 @@ dims = {{dims}}
 line = sh_broadcast(lhs_loc, lhs_type, b_loc, dims, ssa_types)
 output.append(line)
 
+### TEMPLATE: PRETTY ###
+operands = [parameter_util(global_counters, name) for name in {{operands}}]
+lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
+line = sh_pretty({{op}}, lhs_loc, lhs_type, operands, ssa_types)
+output.append(line)
+
 ### TEMPLATE: GENERIC ###
 operands = [parameter_util(global_counters, name) for name in {{operands}}]
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
