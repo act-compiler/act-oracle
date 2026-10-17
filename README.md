@@ -74,7 +74,7 @@ It raises `TypeError` for a `constant` number that is not an integer at an integ
 
 An oracle lowers every operation word TAIDL v2.13 lexes, each to the StableHLO operation that means the same or to a CHLO one where StableHLO has none, and `docs/operations.md` gives each word's operation and the element types at which it lowers.
 On the CPU the tests hold every word exactly but the transcendental ones, held within 2 ulps at `bf16` and `f16` and 8 at `f32` and `f64`, and the one word that reaches past its bound within twice the most it was measured to reach.
-On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` is held within 2 ulps; `triangular_solve` at `f16` is skipped, since XLA's GPU backend fails it.
+On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` is held within 2 ulps.
 
 ## Platforms
 
@@ -83,6 +83,7 @@ Setting a platform, which the first kernel launch does with the CPU if nothing h
 Setting the CPU also sets jax's `jax_platforms` to `cpu` unless the caller has set it.
 If no jax backend has started before, jax then starts only its CPU platform and never initialises CUDA on a GPU host, and setting the GPU afterwards raises `ValueError`.
 Every dot an oracle emits carries the precision `HIGHEST`, so a GPU computes an `f32` dot at `f32`, as the CPU does.
+Every `triangular_solve` an oracle emits at `f16` solves at `f32` and converts its result back to `f16`, since XLA's GPU backend fails a solve at `f16`.
 
 ## Testing
 

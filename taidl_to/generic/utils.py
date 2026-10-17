@@ -285,6 +285,23 @@ def sh_generic(op, lhs, lhs_type, operands, ssa_types, properties):
     return f'{lhs} = "{op}"({", ".join(operands)}){properties} : ({types}) -> {t}'
 
 
+def sh_triangular_solve(lhs, lhs_type, operands, ssa_types, properties):
+    """triangular_solve on operands; at f16 solved at f32"""
+    op = 'stablehlo.triangular_solve'
+    if not lhs_type.startswith('f16['):
+        return sh_generic(op, lhs, lhs_type, operands, ssa_types, properties)
+    # Both operands convert up, the result down
+    wide = [f'{lhs}.a', f'{lhs}.b']
+    lines = []
+    for w, x in zip(wide, operands):
+        ssa_types[w] = ssa_types[x][: -len('f16>')] + 'f32>'
+        lines.append(f'{w} = stablehlo.convert {x} : ({ssa_types[x]}) -> {ssa_types[w]}')
+    wide_type = 'f32' + lhs_type[len('f16') :]
+    lines.append(sh_generic(op, f'{lhs}.f32', wide_type, wide, ssa_types, properties))
+    lines.append(sh_cast('convert', lhs, lhs_type, f'{lhs}.f32', ssa_types))
+    return '\n\t'.join(lines)
+
+
 def mlir_attribute(value):
     """An attribute's value as MLIR writes it: text, a list of integers or an integer"""
     if isinstance(value, str):

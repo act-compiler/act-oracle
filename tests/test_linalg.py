@@ -2,6 +2,7 @@
 
 import itertools
 import os
+import re
 import tempfile
 
 import numpy as np
@@ -10,7 +11,6 @@ from conftest import (
     DTYPES,
     FLOATS,
     LOWERED,
-    PLATFORM,
     add_typed_instruction,
     each_type,
     import_oracle,
@@ -137,12 +137,30 @@ def solve(rng, t):
 
 
 def test_triangular_solve(rng):
-    each_type([t for t in LOWERED['triangular_solve'] if t != 'f16'], lambda t: solve(rng, t))
+    each_type(LOWERED['triangular_solve'], lambda t: solve(rng, t))
 
 
-@pytest.mark.skipif(PLATFORM == 'GPU', reason="the GPU's triangular_solve takes no f16")
-def test_triangular_solve_at_f16(rng):
-    solve(rng, 'f16')
+def traced_solve(rng, t):
+    """The lines traced for the default solve at t, the last one solve runs"""
+    solve(rng, t)
+    return '\n'.join(api.instruction_scopes['main'])
+
+
+def test_triangular_solve_at_f16_through_f32(rng):
+    wide = '(tensor<4x4xf32>, tensor<3x4xf32>) -> tensor<3x4xf32>'
+    # At f16 both operands convert up, the result down
+    lines = traced_solve(rng, 'f16')
+    converts = re.findall(r'stablehlo\.convert \S+ : \((\S+)\) -> (\S+)', lines)
+    assert converts == [
+        ('tensor<4x4xf16>', 'tensor<4x4xf32>'),
+        ('tensor<3x4xf16>', 'tensor<3x4xf32>'),
+        ('tensor<3x4xf32>', 'tensor<3x4xf16>'),
+    ]
+    assert re.findall(r'"stablehlo\.triangular_solve".* : (.*)', lines) == [wide]
+    # At f32 the solve stands alone
+    lines = traced_solve(rng, 'f32')
+    assert 'stablehlo.convert' not in lines
+    assert re.findall(r'"stablehlo\.triangular_solve".* : (.*)', lines) == [wide]
 
 
 def test_batch_norm_inference(rng):
