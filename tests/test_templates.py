@@ -13,6 +13,7 @@ from conftest import (
     PLATFORM,
     ULPS,
     add_typed_instruction,
+    assert_exact,
     each_type,
     import_oracle,
     run_typed,
@@ -258,6 +259,18 @@ for word, (line, shape, _) in LINES.items():
         inputs = [(t, [2, 2]), (t, [2, 2])]
         add_typed_instruction(ops, f'{word}_{t}', inputs, line.format(t=t), (t, shape))
 
+# Lists of dot, reduce_add and broadcast, read at each call
+add_typed_instruction(
+    ops,
+    'dot_reduce_broadcast_lists',
+    [('f32', [3, 4]), ('f32', [4, 2])],
+    """%a = f32[3,2] dot(%x0, %x1), lhs_contracting_dims={`@c.k`}, rhs_contracting_dims={`@c.k - 1`};
+    %b = f32[3] reduce_add(%a), dimensions={`@c.k`};
+    %y = f32[3,2] broadcast(%b), dimensions={`@c.k - 1`};""",
+    ('f32', [3, 2]),
+    comp=['k'],
+)
+
 generate_oracle(ops)
 decorator, api = import_oracle(os.path.join(ops.base_dir, 'targets', 'OPS'), 'oracle_OPS')
 
@@ -356,6 +369,15 @@ def test_names_the_oracle_does_not_reserve():
     x = jnp.asarray(rng.integers(0, 256, 4), dtype=jnp.uint8)
     out = run('np', [x], (4,), jnp.uint8)
     np.testing.assert_array_equal(out, np.asarray(x, np.int64) * 2 % 256)
+
+
+def test_dot_reduce_broadcast_lists_read_at_the_call(rng):
+    # Small integers keep every f32 sum exact
+    a, b = rng.integers(-3, 4, (3, 4)), rng.integers(-3, 4, (4, 2))
+    args = [a.astype(np.float32), b.astype(np.float32)]
+    out = run_typed(decorator, api, 'dot_reduce_broadcast_lists', args, ('f32', [3, 2]), (1,))
+    sums = (a @ b).sum(axis=1)
+    assert_exact(out, np.broadcast_to(sums[:, None], (3, 2)))
 
 
 @pytest.mark.parametrize('name', BROADCASTS)

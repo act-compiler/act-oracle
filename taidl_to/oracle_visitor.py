@@ -6,7 +6,7 @@ from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import python
 from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
-from .shapes import declared, disagreement
+from .shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement
 from .template import generate_code, templates
 
 # Element types as a semantics spells them
@@ -78,6 +78,13 @@ TYPES = {
     'compare': EVERY,
     'select': EVERY,
     'clamp': EVERY,
+    'slice': EVERY,
+    'dynamic_slice': EVERY,
+    'concatenate': EVERY,
+    'pad': EVERY,
+    'reverse': EVERY,
+    'dynamic_update_slice': EVERY,
+    'gather': EVERY,
 }
 
 # The comparison types each element type takes
@@ -87,8 +94,16 @@ COMPARE_TYPES = {
     **dict.fromkeys(FLOATS, ('FLOAT', 'TOTALORDER')),
 }
 
+# Where each word's integer index operands start
+INDICES = {'dynamic_slice': 1, 'dynamic_update_slice': 2, 'gather': 1}
+
 # The words StableHLO lacks, which CHLO holds
 CHLO = ('mulhi', 'erf', 'asin', 'acos', 'sinh', 'cosh', 'asinh', 'acosh', 'atanh')
+
+
+def source(value):
+    """A value as Python: a list's items in brackets, else its text"""
+    return value if isinstance(value, str) else '[' + ', '.join(value) + ']'
 
 
 def generic_attributes(word, attributes):
@@ -102,10 +117,22 @@ def generic_attributes(word, attributes):
         given = {'comparison_direction': repr(direction)}
         if 'type' in attributes:
             given['compare_type'] = repr(f'#stablehlo<comparison_type {attributes["type"]}>')
+    elif word == 'slice':
+        starts, limits, strides = zip(*attributes['slice'])
+        given = {'start_indices': starts, 'limit_indices': limits, 'strides': strides}
+    elif word == 'dynamic_slice':
+        given = {'slice_sizes': attributes['dynamic_slice_sizes']}
+    elif word == 'concatenate':
+        given = {'dimension': attributes['dimensions'][0]}
+    elif word == 'gather':
+        lists = {**GATHER_DEFAULTS, **attributes}
+        dims = ', '.join(f'{name}={source(lists[name])}' for name in GATHER_LISTS)
+        given = {'dimension_numbers': f'gather_numbers({attributes["index_vector_dim"]}, {dims})'}
+        given['slice_sizes'] = attributes['slice_sizes']
     else:
         # Any other word's attributes have StableHLO's names
         given = attributes
-    return '{' + ', '.join(f"'{name}': {value}" for name, value in given.items()) + '}'
+    return '{' + ', '.join(f"'{name}': {source(value)}" for name, value in given.items()) + '}'
 
 
 class OracleVisitor(IDLV2Visitor):
@@ -164,6 +191,12 @@ class OracleVisitor(IDLV2Visitor):
                 f"{self.instruction}: operation '{op_name}' at type '{typ}' "
                 'is not supported by the oracle'
             )
+        for name in operand_names[INDICES.get(op_name, len(operand_names)) :]:
+            if self.values[name][0] not in INTEGERS:
+                raise NotImplementedError(
+                    f"{self.instruction}: operation '{op_name}' at an index of type "
+                    f"'{self.values[name][0]}' is not supported by the oracle"
+                )
 
         attributes = {}
         if ctx.attributes():
@@ -210,28 +243,25 @@ class OracleVisitor(IDLV2Visitor):
         elif template_name == 'BROADCAST':
             mapping['A'] = f"'{operand_names[0]}'"
             # broadcast maps operand dims by position; keep the spec's order
-            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
+            mapping['dims'] = source(attributes['dimensions'])
 
         elif template_name == 'TRANSPOSE':
             mapping['in'] = f"'{operand_names[0]}'"
-            mapping['dims'] = ', '.join(str(d) for d in attributes['dimensions'])
+            mapping['dims'] = source(attributes['dimensions'])
 
         elif template_name == 'DOT':
             mapping['A'] = f"'{operand_names[0]}'"
             mapping['B'] = f"'{operand_names[1]}'"
 
             # dot pairs dimension lists by position; keep the spec's order
-            def format_dims(value):
-                return "'{" + ', '.join(str(v) for v in value) + "}'"
-
-            mapping['lb'] = format_dims(attributes.get('lhs_batch_dims', []))
-            mapping['lc'] = format_dims(attributes['lhs_contracting_dims'])
-            mapping['rb'] = format_dims(attributes.get('rhs_batch_dims', []))
-            mapping['rc'] = format_dims(attributes['rhs_contracting_dims'])
+            mapping['lb'] = source(attributes.get('lhs_batch_dims', []))
+            mapping['lc'] = source(attributes['lhs_contracting_dims'])
+            mapping['rb'] = source(attributes.get('rhs_batch_dims', []))
+            mapping['rc'] = source(attributes['rhs_contracting_dims'])
 
         elif template_name == 'REDUCE_ADD':
             mapping['A'] = f"'{operand_names[0]}'"
-            mapping['dims'] = '{' + ', '.join(str(d) for d in attributes['dimensions']) + '}'
+            mapping['dims'] = source(attributes['dimensions'])
             template_name = 'REDUCE'
 
         elif template_name == 'CONSTANT':
@@ -279,6 +309,8 @@ class OracleVisitor(IDLV2Visitor):
     def visitAttribute_value(self, ctx: IDLV2Parser.Attribute_valueContext):
         if ctx.brace_list():
             return self.visit(ctx.brace_list())
+        if ctx.slice_list():
+            return self.visit(ctx.slice_list())
         value = ctx.value()
         if value.EXPRESSION():
             # A scalar attribute lowers from a literal alone
@@ -291,16 +323,25 @@ class OracleVisitor(IDLV2Visitor):
         return str(int(text)) if re.fullmatch(r'-?[0-9]+', text) else text
 
     def visitBrace_list(self, ctx: IDLV2Parser.Brace_listContext):
-        values = []
-        for value_ctx in ctx.value():
-            if value_ctx.EXPRESSION():
-                # The oracle lowers a list of integers alone
-                name = ctx.parentCtx.parentCtx.name().getText()
-                raise NotImplementedError(
-                    f"{self.instruction}: an expression in '{name}' is not supported by the oracle"
-                )
-            values.append(value_ctx.getText())
-        return values
+        return [self.integer_source(value_ctx) for value_ctx in ctx.value()]
+
+    def visitSlice_list(self, ctx: IDLV2Parser.Slice_listContext):
+        """Each range's start, limit and stride, the stride 1 unless given"""
+        ranges, bounds = [], []
+        for child in ctx.getChildren():
+            if isinstance(child, IDLV2Parser.ValueContext):
+                bounds.append(self.integer_source(child))
+            elif child.getText() == ']':
+                ranges.append((*bounds, '1')[:3])
+                bounds = []
+        return ranges
+
+    def integer_source(self, ctx):
+        """An integer as Python: a literal's value, or an expression evaluated at each call"""
+        if ctx.EXPRESSION():
+            return python(self.expressions[ctx.EXPRESSION()])
+        # Drop a literal's leading zeros, which Python refuses
+        return str(int(ctx.getText()))
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
         # Refuse by name a type the oracle does not lower
@@ -317,11 +358,7 @@ class OracleVisitor(IDLV2Visitor):
         return (shape_type, shape_dims)
 
     def visitShape(self, ctx: IDLV2Parser.ShapeContext):
-        # An expression as Python evaluated at each call
-        dims = [
-            python(self.expressions[dim.EXPRESSION()]) if dim.EXPRESSION() else dim.INT().getText()
-            for dim in ctx.dim()
-        ]
+        dims = [self.integer_source(dim) for dim in ctx.dim()]
         typ = ctx.parentCtx.TYPE().getText()
         return (', '.join(dims), typ)
 
