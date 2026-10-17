@@ -121,6 +121,28 @@ def reduce_precision(result, operands, attributes):
     return elementwise(result, operands, attributes)
 
 
+def compare(result, operands, attributes):
+    (lhs, a), (rhs, b) = operands
+    if a[0] != b[0] or not agree(a[1], b[1]):
+        return f'takes operands alike, found {lhs} {text(a)} and {rhs} {text(b)}'
+    return gives(a[1], result, operands, 'pred')
+
+
+def select(result, operands, attributes):
+    (name, pred), *branches = operands
+    if pred[0] != 'pred' or (pred[1] and not agree(pred[1], result[1])):
+        return f'takes a pred of its shape or of rank 0, found {name} {text(pred)}'
+    return elementwise(result, branches, attributes)
+
+
+def clamp(result, operands, attributes):
+    low, operand, high = operands
+    for name, value in (low, high):
+        if value[1] and not agree(value[1], result[1]):
+            return f'takes bounds of its shape or of rank 0, found {name} {text(value)}'
+    return elementwise(result, [operand], attributes) or typed(result, [low, high])
+
+
 def convert(result, operands, attributes):
     return gives(operands[0][1][1], result, operands)
 
@@ -260,6 +282,9 @@ RULES = {
         ],
         elementwise,
     ),
+    'compare': compare,
+    'select': select,
+    'clamp': clamp,
     'is_finite': is_finite,
     'convert': convert,
     'bitcast_convert': bitcast_convert,
