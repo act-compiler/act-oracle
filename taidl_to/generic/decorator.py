@@ -5,7 +5,7 @@ from collections import defaultdict
 import jax
 import numpy as np
 from jax import ffi
-from jax.extend.backend import get_backend, get_compile_options
+from jax.extend.backend import backends, get_backend, get_compile_options
 
 from . import api
 from .build import print_handler_ext
@@ -20,8 +20,16 @@ def set_simulation_backend(platform='CPU'):
     jax.config.update('jax_enable_x64', True)
     jax.config.update('jax_default_matmul_precision', 'highest')
     if platform == 'CPU':
+        # jax starts its CPU platform alone, unless the caller chose
+        if jax.config.jax_platforms is None:
+            jax.config.update('jax_platforms', 'cpu')
         backend = get_backend('cpu')
     else:
+        # A jax started on the CPU alone adds no GPU
+        if jax.config.jax_platforms == 'cpu' and list(backends()) == ['cpu']:
+            raise ValueError(
+                "simulation platform 'GPU' cannot be set: jax has started only its CPU platform"
+            )
         backend = get_backend('gpu')
 
 
