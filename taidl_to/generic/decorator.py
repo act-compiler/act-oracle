@@ -3,6 +3,7 @@ import time
 from collections import defaultdict
 
 import jax
+import numpy as np
 from jax import ffi
 from jax.extend.backend import get_backend, get_compile_options
 
@@ -61,6 +62,11 @@ def kernel(hbm: int, input: list, output: list, constant=()):
 
             def wrapper(*args):
                 if mode == 'fsim-compile':
+                    # A compiled kernel takes its inputs only in 'fsim'
+                    if args:
+                        raise ValueError(
+                            f"kernel {func.__name__!r} takes no arguments in 'fsim-compile'"
+                        )
                     return input, compile_time
 
                 # Only a compiled kernel runs
@@ -69,12 +75,27 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                         f"kernel {func.__name__!r} is not compiled; run it in 'fsim-compile' first"
                     )
 
+                # One argument per declared input
+                if len(args) != len(input):
+                    raise ValueError(
+                        f'kernel {func.__name__!r} declares {len(input)} inputs, '
+                        f'got {len(args)} arguments'
+                    )
+
                 # The module lays the inputs into HBM
-                assert len(args) == len(input), 'args != input'
                 operands = []
-                for arg, spec in zip(args, input):
-                    assert arg.shape == spec['shape'], 'arg.shape != input.shape'
-                    assert arg.dtype == spec['dtype'], 'arg.dtype != input.dtype'
+                for i, (arg, spec) in enumerate(zip(args, input)):
+                    # Each an array of its input's shape and dtype
+                    what = f'argument {i} of kernel {func.__name__!r}'
+                    if not isinstance(arg, (np.ndarray, np.generic, jax.Array)):
+                        raise TypeError(f'{what} is a {type(arg).__name__}, not an array')
+                    shape = tuple(spec['shape'])
+                    if arg.shape != shape:
+                        raise ValueError(f'{what} has shape {arg.shape}, declared {shape}')
+                    if arg.dtype != spec['dtype']:
+                        raise ValueError(
+                            f'{what} has dtype {arg.dtype}, declared {np.dtype(spec["dtype"])}'
+                        )
                     operands.append(jax.device_put(arg, device=device))
 
                 start = time.time()
