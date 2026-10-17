@@ -41,7 +41,7 @@ TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
 
 ## Examples
 
-- `examples/mini_trn/`: `mini_trn.py`, an accelerator with two on-chip buffers, and its `attention`, `identity`, `matmul` and `softmax` kernels under `assembly/`
+- `examples/mini_trn/`: `mini_trn.py`, an AWS Trainium-like accelerator design with two on-chip buffers, and its `attention`, `identity`, `matmul` and `softmax` kernels under `assembly/`
 - `examples/mini_trn_double/`: `mini_trn_double.py`, a variant with a third on-chip buffer, and its four attention kernels, `attention_k1.py` to `attention_k4.py`, under `assembly/`
 
 Running a spec, such as `python examples/mini_trn/mini_trn.py`, generates its oracle into `examples/mini_trn/targets/mini_trn/oracle/`.
