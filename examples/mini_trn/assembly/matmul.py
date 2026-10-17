@@ -14,16 +14,16 @@ def matmul(kernel, api):
         ],
     )
     def matmul_():
-        # Load matrix A into d1[0:63]
+        # Load matrix A into d1[0:64]
         api.load_rm(n=64, addr_in=0, addr_out=0)
 
-        # Load matrix B into d1[64:127]
+        # Load matrix B into d1[64:128]
         api.load_rm(n=64, addr_in=8192, addr_out=64)
 
-        # Compute C = A @ B, result goes to d2[0:63]
+        # Compute C = A @ B, result goes to d2[0:64]
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
-        # Move result from d2[0:63] to d1[0:63]
+        # Move result from d2[0:64] to d1[0:64]
         api.mov(n=64, addr_in=0, addr_out=0)
 
         # Store result back to HBM

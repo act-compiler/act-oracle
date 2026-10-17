@@ -28,16 +28,16 @@ def attention(kernel, api):
         # Apply softmax to S, giving P (in-place in d2)
         api.softmax(n=64, addr=0)
 
-        # Move P from d2[0:63] to d1[0:63]
+        # Move P from d2[0:64] to d1[0:64]
         api.mov(n=64, addr_in=0, addr_out=0)
 
-        # Load V into d1[64:127] (reusing K^T's space)
+        # Load V into d1[64:128] (reusing K^T's space)
         api.load_rm(n=64, addr_in=16384, addr_out=64)
 
-        # Compute O = P @ V, result in d2[0:63]
+        # Compute O = P @ V, result in d2[0:64]
         api.gemm(addr_1=0, addr_2=64, addr_out=0)
 
-        # Move O from d2[0:63] to d1[0:63]
+        # Move O from d2[0:64] to d1[0:64]
         api.mov(n=64, addr_in=0, addr_out=0)
 
         # Store O to HBM at address 24576

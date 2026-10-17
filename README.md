@@ -14,7 +14,7 @@ TAIDL not only standardizes the way tensor accelerator ISAs are specified but al
 
 `act-oracle` is one of the tool generators in the [ACT Ecosystem](https://github.com/act-compiler/act) that consumes TAIDL specifications and emits out a fast & scalable test oracle instantaneously.
 
-Details on automatically generating fast & scalable test oracles from TAIDL definitions is present in Section 6 of our [MICRO 2025](https://doi.org/10.1145/3725843.3756075) paper.
+Details on automatically generating fast & scalable test oracles from TAIDL definitions are present in Section 6 of our [MICRO 2025](https://doi.org/10.1145/3725843.3756075) paper.
 For detailed evaluations against existing baselines, refer to our [MICRO 2025 Artifact](https://github.com/act-compiler/taidl-artifact-micro25).
 
 ## Installation
@@ -36,7 +36,7 @@ generate_oracle(acc)  # acc: a TAIDL Accelerator
 `generate_oracle(acc)` writes the oracle of the accelerator `acc` into `targets/<name>/oracle/` under the accelerator's `base_dir`, by default the directory of the file that creates the accelerator.
 The oracle is a Python package: `api.py` holds one function per instruction, named after it, `decorator.py` holds `kernel`, which declares a kernel's HBM size and its inputs, constants and outputs, and `build/` holds the debug handler.
 A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` traces its instruction calls into one StableHLO module, compiles it with XLA through jax and returns the kernel's declared inputs and its own compile time in milliseconds, and `k('fsim')(*inputs)` runs the compiled module on the inputs and returns its outputs and the run's time in milliseconds.
-A generation that is refused leaves the oracle an earlier generation wrote in place.
+A generation that is refused leaves no oracle, not even one an earlier generation wrote.
 TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
 
 ## Examples
@@ -92,7 +92,7 @@ Every `triangular_solve` an oracle emits at `f16` solves at `f32` and converts i
 ./tests/pytest.sh --platform GPU  # the same tests on an NVIDIA GPU
 ```
 
-`tests/pytest.sh` runs the tests in `devanshdvj/act-env:py3.14-jax0.11.2`, the image `docker/act.env` names, in its tag for the host's architecture, amd64 or arm64, and in its CUDA 13 tag where `nvidia-smi` succeeds and docker lists the nvidia runtime; the CI pulls its amd64 tag.
+`tests/pytest.sh` runs the tests in `devanshdvj/act-env:py3.14-jax0.11.2`, the image `docker/act.env` names, in its tag for the host's architecture, amd64 or arm64, and in its CUDA 13 tag where `nvidia-smi` succeeds and docker lists the nvidia runtime; the CI pulls its amd64 and arm64 tags.
 Ahead of the tests, the CI checks the formatting and lint against `pyproject.toml`, `.editorconfig` and `.clang-format` with `./docker/exec.sh "ruff format --check && ruff check && shfmt -d . && clang-format --dry-run -Werror $(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp' | tr '\n' ' ')"`.
 On the CPU an attention kernel equals its golden bit for bit; on a GPU the goldens are skipped, and an attention kernel is held to its NumPy reference within four bf16 ulps of the largest magnitude in V, twice the largest deviation measured on an NVIDIA H100 NVL.
 `docker/exec.sh`, `docker/run.sh` and `docker/cleanup.sh` take `--cpu` or `--cuda13` to choose the image, as in `docker/exec.sh --cpu "<cmd>"`; without either they pick the `cuda13` image on a GPU host and the CPU image elsewhere, and a CPU image is given no GPU.
