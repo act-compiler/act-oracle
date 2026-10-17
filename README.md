@@ -20,7 +20,7 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.7
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.8
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
@@ -55,9 +55,9 @@ TAIDL v2.13 refuses with a `SyntaxError`, as the spec loads, a semantics whose f
 `generate_oracle` then refuses, before it writes anything, a spec it cannot turn into an oracle, with an error that names the instruction or data model.
 It raises `NotImplementedError` for what the oracle does not support:
 
-- an operation word the oracle does not lower, at all or at its element type
+- an operation word at an element type that `docs/operations.md` does not list for it, or an index of `dynamic_slice`, `dynamic_update_slice` or `gather` that is not of an integer type
 - a data model or value of `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` or `f8e5m2`, the element types the oracle does not lower
-- an expression in backticks in an attribute the oracle lowers from a literal alone
+- an expression in backticks in an attribute that is not a list, such as `iota_dimension` or `epsilon`, which the oracle lowers from a literal alone
 - an instruction that updates the machine state
 - a name the generated oracle keeps for itself, as an instruction, attribute, data model or value
 
@@ -66,6 +66,15 @@ It raises `ValueError` for a spec that contradicts itself:
 - an instruction with output regions and no semantics, or a `%In<k>` or `%Out<k>` in one with no region of its kind
 - a tile typed unlike its data model, or holding more elements than its region
 - a line whose shapes, element types or attributes disagree, where the spec writes them as integers
+- a `compare` whose `type` does not fit its operands, a `constant` literal past its type's range, or a `batch_norm_inference` epsilon past the range of `f32`
+
+It raises `TypeError` for a `constant` number that is not an integer at an integer type, or a `pred` literal at another type.
+
+## Operations
+
+An oracle lowers every operation word TAIDL v2.13 lexes, each to the StableHLO operation that means the same or to a CHLO one where StableHLO has none, and `docs/operations.md` gives each word's operation and the element types at which it lowers.
+On the CPU the tests hold every word exactly but the transcendental ones, held within 2 ulps at `bf16` and `f16` and 8 at `f32` and `f64`, and the one word that reaches past its bound within twice the most it was measured to reach.
+On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` is held within 2 ulps; `triangular_solve` at `f16` is skipped, since XLA's GPU backend fails it.
 
 ## Platforms
 
