@@ -8,6 +8,8 @@ import re
 
 import numpy as np
 
+from .shapes import disagreement
+
 # A loop expression's tokens, any other character last
 LOOP_TOKEN = re.compile(r'0|[1-9][0-9]*|%[A-Za-z_][A-Za-z0-9_]*|[-+*/%()]|\S')
 
@@ -695,9 +697,48 @@ def check_tile(instruction, value, where, buffer, typ, tile, region):
             )
 
 
-def tile_shape(tile, region):
-    """A tile's dims, a looped one replaced by its region's size, which check_tile found equal"""
-    return [region[k] if isinstance(dim, LoopValue) else dim for k, dim in enumerate(tile)]
+def fixed(instruction, expression, value, given):
+    """A value's one integer over its loops, refused by name where it changes"""
+    if not isinstance(value, LoopValue):
+        return value
+    # The first iteration at which it takes each value
+    taken = {}
+    for env in iterations(value.value, value.loops):
+        taken.setdefault(evaluate(value.value, env), env)
+    if len(taken) > 1:
+        shown = ', '.join(f'{name}={arg!r}' for name, arg in given.items() if isinstance(arg, str))
+        changes = ' and '.join(
+            f'{at} at ' + ', '.join(f'{var} = {i}' for var, i in env.items())
+            for at, env in list(taken.items())[:2]
+        )
+        raise ValueError(
+            f'{instruction}: {expression} with {shown} changes over its loop: {changes}'
+        )
+    return next(iter(taken))
+
+
+def written(value):
+    """An attribute as the shape checks read it, each integer its decimal text"""
+    if isinstance(value, (list, tuple)):
+        return type(value)(written(item) for item in value)
+    return str(value)
+
+
+def check_shapes(instruction, word, result, operands, attributes):
+    """Refuse a line whose shapes or attributes disagree at any iteration of its loops"""
+    lhs, typ, dims = result
+    looped = loop_values([dims, [d for _, _, d in operands], list(attributes.values())])
+    loops = {var: span for value in looped for var, span in value.loops.items()}
+    # Each binding of every looped value's variables
+    for env in iterations([term for value in looped for term in value.value], loops):
+        given = [(f"'{name}'", (t, bound(d, env))) for name, t, d in operands]
+        lists = {name: written(bound(value, env)) for name, value in attributes.items()}
+        reason = disagreement(word, (typ, bound(dims, env)), given, lists)
+        if reason:
+            iteration = ', '.join(f'{var} = {at}' for var, at in env.items())
+            raise ValueError(
+                f"{instruction}: {word} of '{lhs}' {reason}" + (f' at {iteration}' if env else '')
+            )
 
 
 def window_type(typ, region, tile_t):

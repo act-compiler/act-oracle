@@ -1,4 +1,4 @@
-"""The shape and type each lowered word gives its result, checked where the spec writes integers
+"""The shape and type each lowered word gives its result, checked at generation and at each call
 
 A value is its element type and its dims, each dim an int or an expression's text.
 A list attribute holds decimal text, which numbers reads as ints, or an expression's text.

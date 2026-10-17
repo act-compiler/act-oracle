@@ -131,8 +131,9 @@ A `NotImplementedError` names what the oracle does not lower, a `ValueError` a c
 | a `constant` number that is not an integer at an integer type, or `true` or `false` at a type other than `pred` | `TypeError`           |
 
 A tile is compared with its region at each call, at each iteration of its loops: one of the region's element count in another shape is read from or written to the region in row-major order where no loop sizes either, and any other tile whose shape differs is refused with a `ValueError`.
-A shape or a list entry written as an expression is known only at the call, so a disagreement it hides fails when the kernel is compiled.
+A shape or a list entry written as an expression is known only at the call, so a disagreement it hides is refused at the call with a `ValueError`, naming the iteration at which a loop expression makes it disagree.
 A `constant` given by an expression is checked against its type at each call.
+An expression in a semantics that reads an attribute given as a loop expression must keep one value over the loop, and a call where that value changes is refused with a `ValueError`.
 
 ## How the tests hold each word
 
