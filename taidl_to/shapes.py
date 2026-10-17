@@ -472,7 +472,18 @@ RULES = {
     'dynamic_update_slice': dynamic_update_slice,
     'gather': gather,
     'dot': dot,
-    'reduce_add': reduce,
+    **dict.fromkeys(
+        [
+            'reduce_add',
+            'reduce_multiply',
+            'reduce_max',
+            'reduce_min',
+            'reduce_and',
+            'reduce_or',
+            'reduce_xor',
+        ],
+        reduce,
+    ),
 }
 
 

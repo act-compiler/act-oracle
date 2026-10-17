@@ -241,7 +241,7 @@ output.append(line)
 a_loc = parameter_util(global_counters, {{A}})
 lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 dim = {{dims}}
-line = sh_reduce('add', lhs_loc, lhs_type, a_loc, dim, ssa_types)
+line = sh_reduce({{op}}, lhs_loc, lhs_type, a_loc, dim, ssa_types)
 output.append(line)
 
 ### TEMPLATE: BROADCAST ###

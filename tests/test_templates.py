@@ -246,11 +246,6 @@ LINES = {
         [2, 2],
         lambda x, y: x @ y,
     ),
-    'reduce_add': (
-        '%y = {t}[2] reduce_add(%x0), dimensions={{1}};',
-        [2],
-        lambda x, y: x.sum(axis=1),
-    ),
 }
 
 # One instruction per lowered word and type

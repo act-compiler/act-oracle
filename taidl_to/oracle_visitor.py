@@ -33,6 +33,12 @@ TYPES = {
     'xor': (*INTEGERS, 'pred'),
     'dot': EVERY,
     'reduce_add': EVERY,
+    'reduce_multiply': EVERY,
+    'reduce_max': EVERY,
+    'reduce_min': EVERY,
+    'reduce_and': (*INTEGERS, 'pred'),
+    'reduce_or': (*INTEGERS, 'pred'),
+    'reduce_xor': (*INTEGERS, 'pred'),
     'constant': EVERY,
     'iota': FLOATS + INTEGERS,
     'abs': (*FLOATS, *SIGNED),
@@ -85,6 +91,17 @@ TYPES = {
     'reverse': EVERY,
     'dynamic_update_slice': EVERY,
     'gather': EVERY,
+}
+
+# The StableHLO op each reduce applies
+REDUCERS = {
+    'reduce_add': 'add',
+    'reduce_multiply': 'multiply',
+    'reduce_max': 'maximum',
+    'reduce_min': 'minimum',
+    'reduce_and': 'and',
+    'reduce_or': 'or',
+    'reduce_xor': 'xor',
 }
 
 # The comparison types each element type takes
@@ -155,7 +172,7 @@ class OracleVisitor(IDLV2Visitor):
             'transpose': 'TRANSPOSE',
             'broadcast': 'BROADCAST',
             'dot': 'DOT',
-            'reduce_add': 'REDUCE_ADD',
+            **{word: 'REDUCE' for word in REDUCERS},
             'constant': 'CONSTANT',
             'iota': 'IOTA',
         }
@@ -259,10 +276,10 @@ class OracleVisitor(IDLV2Visitor):
             mapping['rb'] = source(attributes.get('rhs_batch_dims', []))
             mapping['rc'] = source(attributes['rhs_contracting_dims'])
 
-        elif template_name == 'REDUCE_ADD':
+        elif template_name == 'REDUCE':
             mapping['A'] = f"'{operand_names[0]}'"
+            mapping['op'] = f"'{REDUCERS[op_name]}'"
             mapping['dims'] = source(attributes['dimensions'])
-            template_name = 'REDUCE'
 
         elif template_name == 'CONSTANT':
             mapping['value'] = operand_names[0]
