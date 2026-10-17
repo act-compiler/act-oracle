@@ -5,7 +5,7 @@ from collections import Counter
 
 from taidl import Instruction
 
-from .expression_writer import held, integer, python
+from .expression_writer import condition, held, integer, python
 from .semantic_generator import generate_semantic_code
 from .template import dict_text, generate_code, indent_code, layout, templates
 
@@ -28,6 +28,23 @@ def tile_dims(instruction: Instruction, value: str, holding=False) -> list:
     holder = instruction.instruction if holding else None
     expressions = instruction.instr_expression_asts
     return [integer(dim, expressions, holder) for dim in shape.dim()] if shape else []
+
+
+def generate_constraints(instruction: Instruction) -> str:
+    """Generate a check of each constraint, at each iteration, against the state before the call"""
+    output = ''
+
+    for text, tree in zip(instruction.constraints, instruction.constraint_asts):
+        holds, read = condition(tree)
+        mapping = {
+            'instruction': f"'{instruction.instruction}'",
+            'text': repr(text),
+            'read': read,
+            'condition': holds,
+        }
+        output += generate_code(templates['CHECK_CONSTRAINT'], mapping)
+
+    return output
 
 
 def generate_inputs(instruction: Instruction) -> str:
@@ -140,12 +157,15 @@ def generate_api_function(instruction: Instruction) -> str:
         set_comp_attr += f"'{attr}': {attr},\n"
     set_comp_attr = dict_text(set_comp_attr)
 
+    constraints = generate_constraints(instruction)
     sizes = generate_sizes(instruction)
     inputs = generate_inputs(instruction)
     semantics = generate_semantic_code(instruction)
     outputs = generate_outputs(instruction)
 
     parts = []
+    if constraints:
+        parts.append(constraints)
     if sizes:
         parts.append(sizes)
     if inputs:

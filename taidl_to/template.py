@@ -78,7 +78,9 @@ def split_line(line: str) -> str:
     # So do a call's arguments that fit
     fits = kind == 'call' and len(items) > 1 and len(inner + body) <= WIDTH
     if lone or fits:
-        return '\n'.join([head, split_line(inner + body), tail])
+        # A lone comprehension or boolean chain past WIDTH takes a line per clause
+        parts = clauses(body) if lone and len(inner + body) > WIDTH else [body]
+        return '\n'.join([head, *(split_line(inner + part) for part in parts), tail])
     # Else each item takes a line and a comma
     return '\n'.join([head, *(split_line(inner + item + ',') for item in items), tail])
 
@@ -130,3 +132,25 @@ def top_level_items(body: str) -> list[str]:
             cuts.append(token.start[1])
     items = [body[a + 1 : b].strip() for a, b in zip(cuts, cuts[1:] + [len(body)])]
     return [item for item in items if item]
+
+
+def clauses(body: str) -> list[str]:
+    """The body cut before each outermost `for` and `if` of a comprehension, else `and` and `or`"""
+    depth, words = 0, []
+    for token in tokens(body):
+        if token.type == tokenize.OP and token.string in '([{':
+            depth += 1
+        elif token.type == tokenize.OP and token.string in ')]}':
+            depth -= 1
+        elif (
+            token.type == tokenize.NAME and token.string in ('for', 'if', 'and', 'or') and not depth
+        ):
+            words.append((token.string, token.start[1]))
+    # A comprehension cut at each for and if from its first for
+    first = next((at for word, at in words if word == 'for'), None)
+    if first is None:
+        cuts = [at for word, at in words if word in ('and', 'or')]
+    else:
+        cuts = [at for word, at in words if word in ('for', 'if') and at >= first]
+    cuts = [0, *cuts]
+    return [body[a:b].strip() for a, b in zip(cuts, cuts[1:] + [len(body)])]

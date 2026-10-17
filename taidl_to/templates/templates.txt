@@ -252,6 +252,15 @@ check_window({{instruction}}, {{rhs_name}}, starts, window_t, ssa_types[rhs_loc]
 lines = sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types, window_t)
 output += lines
 
+### TEMPLATE: CHECK_CONSTRAINT ###
+for env, read in bindings({{read}}):
+    # A division by zero names its iteration
+    try:
+        if not ({{condition}}):
+            raise broken_constraint({{instruction}}, {{text}}, read, env)
+    except ZeroDivisionError:
+        raise ZeroDivisionError(env) from None
+
 ### TEMPLATE: CHECK_SIZES ###
 check_sizes({{instruction}}, {{sizes}}, {{dims}})
 

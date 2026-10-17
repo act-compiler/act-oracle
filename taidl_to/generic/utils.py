@@ -741,6 +741,25 @@ def check_shapes(instruction, word, result, operands, attributes):
             )
 
 
+def bindings(read):
+    """Each binding of the loop variables a constraint's values read, and its values there"""
+    looped = loop_values(list(read.values()))
+    loops = {var: span for value in looped for var, span in value.loops.items()}
+    for env in iterations([term for value in looped for term in value.value], loops):
+        yield env, {text: bound(value, env) for text, value in read.items()}
+
+
+def broken_constraint(instruction, text, read, env):
+    """The refusal of a call that breaks a constraint, its values and iteration named"""
+    shown = ', '.join(f'{ref}={value}' for ref, value in read.items())
+    iteration = ', '.join(f'{var} = {at}' for var, at in env.items())
+    return ValueError(
+        f"{instruction}: constraint '{text}' does not hold"
+        + (f' with {shown}' if read else '')
+        + (f' at {iteration}' if env else '')
+    )
+
+
 def window_type(typ, region, tile_t):
     """The type of the cells a tile's region spans: the tile's own where a loop sizes the region"""
     if loop_values(region):
