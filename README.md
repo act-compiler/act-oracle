@@ -20,7 +20,7 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.8
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.9
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
@@ -76,6 +76,24 @@ An oracle lowers every operation word TAIDL v2.13 lexes, each to the StableHLO o
 On the CPU the tests hold every word exactly but the transcendental ones, held within 2 ulps at `bf16` and `f16` and 8 at `f32` and `f64`, and the one word that reaches past its bound within twice the most it was measured to reach.
 On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` is held within 2 ulps.
 
+## What a kernel refuses
+
+`kernel` checks a kernel's declaration when the kernel is compiled, before its body is traced, with an error that names the kernel and the value it refuses.
+It raises `TypeError` for:
+
+- an HBM size, address or shape dimension that is not an integer, where a NumPy integer is one and a `bool` is not
+- a dtype that NumPy does not read or that the oracle does not map, such as `complex64`
+
+It raises `ValueError` for:
+
+- an input, constant or output of `jnp.int2`, `jnp.uint2`, `jnp.int4` or `jnp.uint4` whose elements fill no whole number of bytes
+- a constant whose value, read with `np.asarray`, has a shape or dtype other than the declared one
+- an input, constant or output that runs outside HBM, or an input or constant that shares a byte with another, though an output may lie over either
+
+A run, `k('fsim')(*inputs)`, raises `ValueError` for a kernel not yet compiled, a number of arguments other than the number of its inputs, or an argument whose shape or dtype is not its input's, and `TypeError` for an argument that is not a NumPy array or scalar or a jax array.
+`k('fsim-compile')` takes no arguments and raises `ValueError` when given any.
+An instruction, `start_loop`, `end_loop` or `debug` called outside a kernel body raises `ValueError`.
+
 ## Platforms
 
 An oracle simulates on the CPU unless the generated oracle's `decorator.set_simulation_backend('GPU')` moves it to an NVIDIA GPU; any other platform name raises `ValueError`.
@@ -84,6 +102,7 @@ Setting the CPU also sets jax's `jax_platforms` to `cpu` unless the caller has s
 If no jax backend has started before, jax then starts only its CPU platform and never initialises CUDA on a GPU host, and setting the GPU afterwards raises `ValueError`.
 Every dot an oracle emits carries the precision `HIGHEST`, so a GPU computes an `f32` dot at `f32`, as the CPU does.
 Every `triangular_solve` an oracle emits at `f16` solves at `f32` and converts its result back to `f16`, since XLA's GPU backend fails a solve at `f16`.
+The debug handler prints from a GPU only where jax's CUDA 13 runtime is installed when the oracle is generated, since the generation compiles the handler's CUDA code only where it finds that runtime.
 
 ## Testing
 
