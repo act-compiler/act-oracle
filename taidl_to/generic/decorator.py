@@ -60,11 +60,20 @@ def compile_module(module: str):
     return executable, device, elapsed
 
 
-def check_hbm(name, hbm, input, constant, output):
+def check_declaration(name, hbm, input, constant, output):
+    # Each constant's value of its declared shape and dtype
+    for i, const in enumerate(constant):
+        what = f'constant {i} of kernel {name!r}'
+        value, shape = np.asarray(const['value']), tuple(const['shape'])
+        if value.shape != shape:
+            raise ValueError(f'{what} has shape {value.shape}, declared {shape}')
+        if value.dtype != const['dtype']:
+            raise ValueError(f'{what} has dtype {value.dtype}, declared {np.dtype(const["dtype"])}')
+
     # Every input, constant and output inside HBM
     pieces = {
         'input': [(spec['addr'], spec_bytes(spec)[0]) for spec in input],
-        'constant': [(const['addr'], np.asarray(const['value']).nbytes) for const in constant],
+        'constant': [(const['addr'], spec_bytes(const)[0]) for const in constant],
         'output': [(spec['addr'], spec_bytes(spec)[0]) for spec in output],
     }
     for kind, spans in pieces.items():
@@ -151,7 +160,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 set_simulation_backend()
 
             if mode == 'fsim-compile':
-                check_hbm(func.__name__, hbm, input, constant, output)
+                check_declaration(func.__name__, hbm, input, constant, output)
                 reset_api()
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters

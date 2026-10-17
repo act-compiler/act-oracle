@@ -426,6 +426,41 @@ def test_constant_reaches_hbm():
     assert np.asarray(outputs[0]).tobytes() == np.asarray(V).tobytes()
 
 
+# A constant whose value is unlike its declaration
+@pytest.mark.parametrize(
+    'value, message',
+    [
+        (
+            np.zeros((32, 64), jnp.bfloat16),
+            "constant 0 of kernel 'k' has shape (32, 64), declared (64, 64)",
+        ),
+        (
+            np.zeros((64, 64), np.float32),
+            "constant 0 of kernel 'k' has dtype float32, declared bfloat16",
+        ),
+        (
+            np.zeros((64, 64), jnp.bfloat16).tolist(),
+            "constant 0 of kernel 'k' has dtype float64, declared bfloat16",
+        ),
+    ],
+    ids=['shape', 'dtype', 'list'],
+)
+def test_unlike_constant_refused(value, message):
+    @kernel(
+        hbm=16384,
+        input=[],
+        constant=[dict(INPUT[0], value=value)],
+        output=[dict(OUTPUT[0], addr=8192)],
+    )
+    def k():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=8192)
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')()
+    assert str(refusal.value) == message
+
+
 def test_kernel_keeps_its_executable():
     def copy(addr):
         """A kernel that copies the input at addr to the output"""
