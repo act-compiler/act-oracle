@@ -32,6 +32,7 @@ def generate_inputs(instruction: Instruction) -> str:
         start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
 
         mapping = {
+            'instruction': f"'{instruction.instruction}'",
             'rhs_name': f"'{buffer_name}'",
             'lhs': f"'In{counter}'",
             'type': f"'{model.var_type}'",
@@ -53,6 +54,7 @@ def generate_outputs(instruction: Instruction) -> str:
         start_list = [python(start) for start in starts] + ['0'] * len(model.unit_dim)
 
         mapping = {
+            'instruction': f"'{instruction.instruction}'",
             'lhs': f"'Out{counter}'",
             'rhs_name': f"'{buffer_name}'",
             'starts': '[' + ', '.join(start_list) + ']',
@@ -60,6 +62,37 @@ def generate_outputs(instruction: Instruction) -> str:
         code_output += generate_code(templates['SLICE_STORE'], mapping)
 
     return code_output
+
+
+def generate_sizes(instruction: Instruction) -> str:
+    """Generate a check of each size and dimension an expression gives, at the call"""
+    sizes, dims = {}, {}
+
+    # Each region's sizes, then each dim its semantics declares
+    for regions, trees in (
+        (instruction.instr_inputs, instruction.instr_input_asts),
+        (instruction.instr_outputs, instruction.instr_output_asts),
+    ):
+        for (_, _, texts), (_, _, size_trees) in zip(regions, trees):
+            for text, tree in zip(texts, size_trees):
+                sizes[f'`{text}`'] = python(tree)
+    lines = instruction.instr_semantics_ast.instruction() if instruction.instr_semantics_ast else []
+    for line in lines:
+        shape = line.result_type().shape()
+        for dim in shape.dim() if shape else []:
+            if dim.EXPRESSION() and dim.getText() not in sizes:
+                dims[dim.getText()] = python(instruction.instr_expression_asts[dim.EXPRESSION()])
+
+    # A literal needs no check
+    sizes = {text: source for text, source in sizes.items() if not source.isdigit()}
+    if not sizes and not dims:
+        return ''
+    mapping = {
+        'instruction': f"'{instruction.instruction}'",
+        'sizes': '{' + ', '.join(f'{text!r}: {source}' for text, source in sizes.items()) + '}',
+        'dims': '{' + ', '.join(f'{text!r}: {source}' for text, source in dims.items()) + '}',
+    }
+    return generate_code(templates['CHECK_SIZES'], mapping)
 
 
 def generate_api_function(instruction: Instruction) -> str:
@@ -82,11 +115,14 @@ def generate_api_function(instruction: Instruction) -> str:
         set_comp_attr += f"'{attr}': {attr},\n"
     set_comp_attr = dict_text(set_comp_attr)
 
+    sizes = generate_sizes(instruction)
     inputs = generate_inputs(instruction)
     semantics = generate_semantic_code(instruction)
     outputs = generate_outputs(instruction)
 
     parts = []
+    if sizes:
+        parts.append(sizes)
     if inputs:
         parts.append(inputs)
     if semantics:

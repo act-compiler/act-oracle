@@ -62,12 +62,17 @@ def evaluate(value, env):
     return total
 
 
+def iterations(value, loops):
+    """Each binding of a value's loop variables over its loops, outer first"""
+    names = [var for var in loops if var in variables(value)]
+    for point in itertools.product(*(loops[var] for var in names)):
+        yield dict(zip(names, point))
+
+
 def divide(operator, a, b, loops):
     """a / b or a % b, floored as the language floors"""
     # Refuse a divisor zero at any iteration, naming it
-    names = [var for var in loops if var in variables(b)]
-    for point in itertools.product(*(loops[var] for var in names)):
-        env = dict(zip(names, point))
+    for env in iterations(b, loops):
         if evaluate(b, env) == 0:
             raise ZeroDivisionError(env)
     divisor = constant(b)
@@ -79,8 +84,68 @@ def divide(operator, a, b, loops):
     return ((((operator, a, b),), 1),)
 
 
+# Each operator of the language on two values
+OPERATIONS = {
+    '+': lambda a, b, loops: merge(a + b),
+    '-': lambda a, b, loops: merge(a + multiply(literal(-1), b)),
+    '*': lambda a, b, loops: multiply(a, b),
+    '/': lambda a, b, loops: divide('/', a, b, loops),
+    '%': lambda a, b, loops: divide('%', a, b, loops),
+}
+
+
+class LoopValue:
+    """A loop expression's value, which the language's arithmetic operators combine"""
+
+    def __init__(self, value, loops, name=None):
+        # Its terms, its loops' ranges, its SSA name once emitted
+        self.value, self.loops, self.name = value, loops, name
+
+    def combine(self, operator, other, reflected=False):
+        """self operator other, or other operator self if reflected"""
+        if isinstance(other, LoopValue):
+            other_value, loops = other.value, self.loops | other.loops
+        else:
+            other_value, loops = literal(other), self.loops
+        a, b = (other_value, self.value) if reflected else (self.value, other_value)
+        return LoopValue(OPERATIONS[operator](a, b, loops), loops)
+
+    def __add__(self, other):
+        return self.combine('+', other)
+
+    def __radd__(self, other):
+        return self.combine('+', other, True)
+
+    def __sub__(self, other):
+        return self.combine('-', other)
+
+    def __rsub__(self, other):
+        return self.combine('-', other, True)
+
+    def __mul__(self, other):
+        return self.combine('*', other)
+
+    def __rmul__(self, other):
+        return self.combine('*', other, True)
+
+    def __floordiv__(self, other):
+        return self.combine('/', other)
+
+    def __rfloordiv__(self, other):
+        return self.combine('/', other, True)
+
+    def __mod__(self, other):
+        return self.combine('%', other)
+
+    def __rmod__(self, other):
+        return self.combine('%', other, True)
+
+    def __neg__(self):
+        return self.combine('*', -1)
+
+
 def read_loop_expression(instruction, name, expression, loop_stack):
-    """A call's loop expression as terms, each a coefficient and its atoms.
+    """A call's loop expression as a LoopValue of terms, each a coefficient and its atoms.
 
     An atom is a loop variable or a quotient (operator, a, b) of two values.
     """
@@ -98,20 +163,13 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     def additive():
         value = multiplicative()
         while tokens[at] in ('+', '-'):
-            sign = -1 if take() == '-' else 1
-            value = merge(value + multiply(literal(sign), multiplicative()))
+            value = OPERATIONS[take()](value, multiplicative(), loops)
         return value
 
     def multiplicative():
         value = unary()
         while tokens[at] in ('*', '/', '%'):
-            operator = take()
-            operand = unary()
-            value = (
-                multiply(value, operand)
-                if operator == '*'
-                else divide(operator, value, operand, loops)
-            )
+            value = OPERATIONS[take()](value, unary(), loops)
         return value
 
     def unary():
@@ -141,12 +199,11 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     value = additive()
     if tokens[at]:
         raise unreadable
-    return value
+    return LoopValue(value, loops)
 
 
-def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
-    """StableHLO lines computing a call's loop expression, and its SSA name"""
-    final_name = f'%loop_final.{global_counters["loop_var"]}'
+def value_lines(value, final_name):
+    """StableHLO lines computing a loop expression's value as final_name"""
     lines = []
 
     def emit(value, prefix):
@@ -181,11 +238,17 @@ def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_coun
         lines.append(f'{prefix} = stablehlo.divide {prefix}.s, {b} : tensor<i64>')
         return prefix
 
-    value = read_loop_expression(instruction, name, expression, loop_stack)
     total = emit(value, final_name)
     if total != final_name:
         lines.append(f'{final_name} = stablehlo.reshape {total} : (tensor<i64>) -> tensor<i64>')
-    return '\n'.join(lines) + '\n', final_name
+    return lines
+
+
+def generate_loop_eq_vars(instruction, name, expression, loop_stack, global_counters):
+    """StableHLO lines computing a call's loop expression, and its LoopValue, named"""
+    read = read_loop_expression(instruction, name, expression, loop_stack)
+    read.name = f'%loop_final.{global_counters["loop_var"]}'
+    return '\n'.join(value_lines(read.value, read.name)) + '\n', read
 
 
 def integral(value):
@@ -514,19 +577,91 @@ def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
 
 
 def index_constants(lhs, starts):
-    """One tensor<i64> constant per literal index; a loop expression passes through"""
+    """One tensor<i64> per start: a literal's constant, or a loop value's SSA name"""
     lines, locs = [], []
-    for k, s in enumerate(starts):
-        if '%' in s:
-            locs.append(s)
-        else:
+    for k, start in enumerate(starts):
+        if not isinstance(start, LoopValue):
             locs.append(f'{lhs}.i{k}')
-            lines.append(f'{locs[-1]} = stablehlo.constant dense<{int(s)}> : tensor<i64>')
+            lines.append(f'{locs[-1]} = stablehlo.constant dense<{start}> : tensor<i64>')
+        elif start.name:
+            # An attribute's value, emitted at the call
+            locs.append(start.name)
+        else:
+            # A start computed over an attribute's value
+            locs.append(f'{lhs}.i{k}')
+            lines += value_lines(start.value, locs[-1])
     return lines, locs
 
 
+def tensor_dims(mlir_t):
+    """tensor<64x64xbf16> -> [64, 64]"""
+    return [int(d) for d in mlir_t[len('tensor<') : -1].split('x')[:-1]]
+
+
+def check_sizes(instruction, sizes, dims):
+    """Refuse a region size or a semantics dim that is not positive, at any iteration"""
+    for kind, given in (('size', sizes), ('dimension', dims)):
+        for text, size in given.items():
+            # A plain size as a LoopValue over no loops
+            read = size if isinstance(size, LoopValue) else LoopValue(literal(size), {})
+            for env in iterations(read.value, read.loops):
+                at = evaluate(read.value, env)
+                if at < 1:
+                    iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
+                    raise ValueError(
+                        f'{instruction}: {kind} {text} is {at}'
+                        + (f' at {iteration}' if env else '')
+                        + ', not positive'
+                    )
+
+
+def debug_index(data, global_counters):
+    """The buffer a debug call names and its index, an integer per leading dim, none for ':'"""
+    name, bracket, index = data.partition('[')
+    # Each buffer's counter a dict, each trace counter an int
+    buffers = [key for key, counter in global_counters.items() if isinstance(counter, dict)]
+    if name not in buffers:
+        raise ValueError(f'debug: {data!r} names no buffer')
+    if not bracket or not index.endswith(']') or not index[:-1].strip():
+        raise ValueError(
+            f'debug: {data!r} gives no index; {name + "[:]"!r} prints the whole buffer'
+        )
+    # A bare ':' the whole buffer, each entry a Python integer literal
+    entries = (
+        [] if index[:-1].strip() == ':' else [entry.strip() for entry in index[:-1].split(',')]
+    )
+    indices = []
+    for entry in entries:
+        try:
+            indices.append(int(entry, 0))
+        except ValueError:
+            raise TypeError(f'debug: {data!r} has index {entry!r}, not an integer') from None
+    dims = tensor_dims(mlir_type(global_counters[name]['type']))
+    if len(entries) > len(dims):
+        raise ValueError(
+            f'debug: {data!r} gives {len(entries)} indices for the {len(dims)} dimensions of {name}'
+        )
+    return name, indices
+
+
+def check_window(instruction, buffer, starts, window_t, buffer_t):
+    """Refuse a window outside its buffer at any iteration of its loops"""
+    dims = zip(starts, tensor_dims(window_t), tensor_dims(buffer_t))
+    for k, (start, size, extent) in enumerate(dims):
+        # A literal start as a LoopValue over no loops
+        read = start if isinstance(start, LoopValue) else LoopValue(literal(start), {})
+        for env in iterations(read.value, read.loops):
+            at = evaluate(read.value, env)
+            if at < 0 or at + size > extent:
+                iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
+                raise ValueError(
+                    f'{instruction}: window [{at}:{at + size}] on dimension {k} of {buffer} '
+                    f'runs outside its extent {extent}' + (f' at {iteration}' if env else '')
+                )
+
+
 def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
-    lines, locs = index_constants(lhs, [str(start) for start in starts])
+    lines, locs = index_constants(lhs, starts)
     t = mlir_type(lhs_type)
     sizes = lhs_type.split('[', 1)[1].split(']')[0]
     lines.append(
@@ -538,7 +673,7 @@ def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
 
 
 def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types):
-    lines, locs = index_constants(lhs_loc, [str(start) for start in starts])
+    lines, locs = index_constants(lhs_loc, starts)
     t = mlir_type(lhs_type)
     lines.append(
         f'{lhs_loc} = stablehlo.dynamic_update_slice {", ".join([rhs_loc, rhs_update] + locs)} : '

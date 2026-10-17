@@ -368,7 +368,7 @@ def test_index_of_another_type_refused(word):
         generate_oracle(refused)
 
 
-@pytest.mark.parametrize('stride', [16, 40, 64])
+@pytest.mark.parametrize('stride', [16, 40, 63])
 def test_tile_load_and_store(stride, rng):
     data = sample(rng, 'u8', [16 * stride])
 
@@ -383,6 +383,20 @@ def test_tile_load_and_store(stride, rng):
     rows = np.zeros((16, 64), np.uint8)
     rows[:, :stride] = data.reshape(16, stride)
     np.testing.assert_array_equal(out[4096 : 4096 + 1024], rows.reshape(-1))
+
+
+# A dimension the call makes zero or negative, refused by name
+@pytest.mark.parametrize('stride, dim', [(64, 0), (80, -16)], ids=['zero', 'negative'])
+def test_dimension_not_positive_refused(stride, dim):
+    @decorator.kernel(
+        hbm=2048, input=[{'addr': 0, 'shape': (16,), 'dtype': np.uint8}], constant=[], output=[]
+    )
+    def k():
+        api.tile_load(stride, 0, 0)
+
+    with pytest.raises(ValueError) as refusal:
+        k('fsim-compile')
+    assert str(refusal.value) == f'tile_load: dimension `64 - @c.stride` is {dim}, not positive'
 
 
 @pytest.mark.parametrize('rows, stride', [(4, 64), (3, 16)])
