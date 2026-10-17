@@ -105,7 +105,6 @@ def kernel(hbm: int, input: list, output: list, constant=()):
 
                 return outputs, elapsed
 
-            api.mode = mode
             if backend is None:
                 set_simulation_backend()
 
@@ -113,8 +112,12 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 reset_api()
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
-                func()
-                module = api.generate_module(hbm, input, constant, output)
+                try:
+                    func()
+                    module = api.generate_module(hbm, input, constant, output)
+                finally:
+                    # No trace outside the kernel body
+                    api.global_counters = None
                 executable, device, compile_time = compile_module(module)
 
             return wrapper

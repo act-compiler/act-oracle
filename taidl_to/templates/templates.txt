@@ -17,13 +17,19 @@ state = {{state}}
 # SSA name -> MLIR type of each traced value
 ssa_types = {}
 
+# The trace's counters, None outside a kernel body
 global_counters = None
 
-mode = None
 instruction_scopes = defaultdict(list)
 
 loop_stack = []
 cur_scope = 'main'
+
+
+def require_trace(name):
+    # Calls record only inside a kernel body
+    if global_counters is None:
+        raise ValueError(f'{name!r} must be called inside a kernel')
 
 
 def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list):
@@ -51,6 +57,7 @@ def generate_module(hbm_size: int, inputs: list, constants: list, outputs: list)
 
 def start_loop(var_name, start, end):
     global cur_scope
+    require_trace('start_loop')
     loop = {
         'var': '%' + var_name,
         'id': global_counters['total_loop_counter'],
@@ -76,6 +83,7 @@ def start_loop(var_name, start, end):
 
 def end_loop():
     global cur_scope
+    require_trace('end_loop')
     if not loop_stack:
         raise ValueError('end_loop has no start_loop')
     loop = loop_stack.pop()
@@ -114,59 +122,60 @@ def end_loop():
 
 
 def debug(prefix: str, data: str) -> None:
-    if mode == 'fsim-compile':
-        output = []
+    require_trace('debug')
+    output = []
 
-        # The handler prints the prefix up to a nul
-        prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
-        prefix_len = len(prefix_bytes)
-        prefix_string = '['
-        for i in range(len(prefix_bytes)):
-            if i != 0:
-                prefix_string += ', '
-            prefix_string += f'{prefix_bytes[i]}'
-        prefix_string += ']'
+    # The handler prints the prefix up to a nul
+    prefix_bytes = jnp.frombuffer(prefix.encode('utf-8') + b'\0', dtype=jnp.uint8)
+    prefix_len = len(prefix_bytes)
+    prefix_string = '['
+    for i in range(len(prefix_bytes)):
+        if i != 0:
+            prefix_string += ', '
+        prefix_string += f'{prefix_bytes[i]}'
+    prefix_string += ']'
 
-        data_name = data.split('[')[0]
+    data_name = data.split('[')[0]
 
-        rhs_loc = parameter_util(global_counters, data_name)
-        data_dims = ast.literal_eval(
-            '[' + global_counters[data_name]['type'].split('[')[1].split(']')[0] + ']'
-        )
-        debug_dims = ast.literal_eval('[' + data.split('[')[1].split(']')[0] + ']')
-        starts = []
-        for i in range(len(debug_dims)):
-            data_dims[i] = 1
-        for i in range(len(data_dims)):
-            data_dims[i] = str(data_dims[i])
-            if i < len(debug_dims):
-                starts.append(str(debug_dims[i]))
-            else:
-                starts.append('0')
+    rhs_loc = parameter_util(global_counters, data_name)
+    data_dims = ast.literal_eval(
+        '[' + global_counters[data_name]['type'].split('[')[1].split(']')[0] + ']'
+    )
+    debug_dims = ast.literal_eval('[' + data.split('[')[1].split(']')[0] + ']')
+    starts = []
+    for i in range(len(debug_dims)):
+        data_dims[i] = 1
+    for i in range(len(data_dims)):
+        data_dims[i] = str(data_dims[i])
+        if i < len(debug_dims):
+            starts.append(str(debug_dims[i]))
+        else:
+            starts.append('0')
 
-        data_type = global_counters[data_name]['type'].split('[')[0]
-        lhs_loc, lhs_type = lhs_util(global_counters, 'debug_slice', data_type, data_dims)
-        line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types)
-        output.append(line)
+    data_type = global_counters[data_name]['type'].split('[')[0]
+    lhs_loc, lhs_type = lhs_util(global_counters, 'debug_slice', data_type, data_dims)
+    line = sh_slice_load(lhs_loc, lhs_type, rhs_loc, starts, ssa_types)
+    output.append(line)
 
-        rhs_loc = parameter_util(global_counters, 'debug_slice')
-        lhs_loc, lhs_type = lhs_util(global_counters, 'debug_slice_f64', 'f64', data_dims)
-        line = sh_cast('convert', lhs_loc, lhs_type, rhs_loc, ssa_types)
-        output.append(line)
+    rhs_loc = parameter_util(global_counters, 'debug_slice')
+    lhs_loc, lhs_type = lhs_util(global_counters, 'debug_slice_f64', 'f64', data_dims)
+    line = sh_cast('convert', lhs_loc, lhs_type, rhs_loc, ssa_types)
+    output.append(line)
 
-        rhs_loc = parameter_util(global_counters, 'debug_slice_f64')
-        debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
-        output.append(
-            f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>'
-        )
-        output.append(
-            f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @{__package__}.print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>'
-        )
-        instruction_scopes[cur_scope] += output
-        global_counters['instruction_counter'] += 1
+    rhs_loc = parameter_util(global_counters, 'debug_slice_f64')
+    debug_prefix_loc = f'%debug_prefix.{global_counters["instruction_counter"]}'
+    output.append(
+        f'{debug_prefix_loc} = stablehlo.constant dense<{prefix_string}> : tensor<{prefix_len}xui8>'
+    )
+    output.append(
+        f'%call.{global_counters["instruction_counter"]} = stablehlo.custom_call @{__package__}.print_handler({debug_prefix_loc}, {rhs_loc}) {{api_version = 4 : i32, has_side_effect = true}} : (tensor<{prefix_len}xui8>, {ssa_types[rhs_loc]}) -> tensor<i32>'
+    )
+    instruction_scopes[cur_scope] += output
+    global_counters['instruction_counter'] += 1
 
 ### TEMPLATE: API_FUNC ###
 global comp_attrs
+require_trace({{name}})
 comp_attrs = {{set_comp_attr}}
 attrs = {{set_attributes}}
 output = []

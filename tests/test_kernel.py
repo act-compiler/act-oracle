@@ -412,3 +412,47 @@ def test_compile_arguments_refused():
     with pytest.raises(ValueError) as refusal:
         copy_q('fsim-compile')(QKV[0], 3)
     assert str(refusal.value) == "kernel 'copy_q' takes no arguments in 'fsim-compile'"
+
+
+# Each kind of API call, outside a kernel body
+OUTSIDE = {
+    'load_rm': lambda a: a.load_rm(n=64, addr_in=0, addr_out=0),
+    'debug': lambda a: a.debug(prefix='d1', data='d1[0]'),
+    'start_loop': lambda a: a.start_loop('i', 0, 4),
+    'end_loop': lambda a: a.end_loop(),
+}
+
+
+# Before any compile, then after a compile, a run or a refused one
+@pytest.mark.parametrize('when', ['fresh', 'compiled', 'run', 'refused'])
+def test_call_outside_kernel_refused(when):
+    # A fresh import, so no kernel is compiled yet
+    decorator, fresh = import_oracle(
+        os.path.dirname(os.path.dirname(api.__file__)), f'oracle_outside_{when}'
+    )
+
+    @decorator.kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def copy_q():
+        fresh.load_rm(n=64, addr_in=0, addr_out=0)
+        fresh.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    @decorator.kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def unstarted():
+        fresh.end_loop()
+
+    Q, K, V = load_qkv()
+    if when in ('compiled', 'run'):
+        copy_q('fsim-compile')()
+    if when == 'run':
+        copy_q('fsim')(Q, K, V)
+    if when == 'refused':
+        with pytest.raises(ValueError, match='end_loop has no start_loop'):
+            unstarted('fsim-compile')()
+    for name, call in OUTSIDE.items():
+        with pytest.raises(ValueError) as refusal:
+            call(fresh)
+        assert str(refusal.value) == f"'{name}' must be called inside a kernel"
+    # Inside a kernel each call records as before
+    copy_q('fsim-compile')()
+    outputs, _ = copy_q('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
