@@ -328,3 +328,20 @@ def test_kernel_keeps_its_compile_time(monkeypatch):
     # Each reports its own time, not the last one compiled
     assert compiled_first() == (INPUT, 2.0)
     assert compiled_second() == (INPUT, 500.0)
+
+
+def test_run_before_compile_refused():
+    @kernel(hbm=32768, input=INPUT, constant=[], output=OUTPUT)
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    Q, K, V = load_qkv()
+    with pytest.raises(
+        ValueError, match="kernel 'copy_q' is not compiled; run it in 'fsim-compile' first"
+    ):
+        copy_q('fsim')(Q, K, V)
+    # Once compiled, the same kernel runs
+    copy_q('fsim-compile')()
+    outputs, _ = copy_q('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
