@@ -307,6 +307,16 @@ lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
 line = sh_binary('xor', lhs_loc, lhs_type, rhs_first, rhs_second, ssa_types)
 output.append(line)
 
+### TEMPLATE: CONSTANT ###
+lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
+line = sh_constant(lhs_loc, lhs_type, {{value}}, {{instruction}}, ssa_types)
+output.append(line)
+
+### TEMPLATE: IOTA ###
+lhs_loc, lhs_type = lhs_util(global_counters, {{lhs}}, {{type}}, {{size}})
+line = sh_iota(lhs_loc, lhs_type, {{dimension}}, ssa_types)
+output.append(line)
+
 ### TEMPLATE: SEMANTIC_INIT ###
 def semantic_init(hbm_size):
     global_counters = {

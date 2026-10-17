@@ -92,11 +92,22 @@ def gives(dims, result, operands, typ=None):
     return f'gives {text((typ, dims))} of {given}, not {text(result)}'
 
 
+def free(result, operands, attributes):
+    """A word whose result takes any shape: a constant's literal fills it."""
+
+
 def elementwise(result, operands, attributes):
     for name, value in operands:
         if not agree(value[1], result[1]):
             return f'takes operands of its shape {text(result)}, found {name} {text(value)}'
     return typed(result, operands)
+
+
+def iota(result, operands, attributes):
+    rank, dim = len(result[1]), int(attributes['iota_dimension'])
+    if 0 <= dim < rank:
+        return None
+    return f'takes an iota_dimension below the rank {rank} of its result, found {dim}'
 
 
 def convert(result, operands, attributes):
@@ -184,6 +195,8 @@ def dot(result, operands, attributes):
 
 # The check of each word, by name
 RULES = {
+    'constant': free,
+    'iota': iota,
     **dict.fromkeys(
         [
             'add',
