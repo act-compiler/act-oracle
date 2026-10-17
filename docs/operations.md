@@ -130,6 +130,7 @@ A `NotImplementedError` names what the oracle does not lower, a `ValueError` a c
 | a `batch_norm_inference` epsilon past the range of `f32`, the type StableHLO gives it                           | `ValueError`          |
 | a `constant` number that is not an integer at an integer type, or `true` or `false` at a type other than `pred` | `TypeError`           |
 
+A tile is compared with its region at each call, at each iteration of its loops: one of the region's element count in another shape is read from or written to the region in row-major order where no loop sizes either, and any other tile whose shape differs is refused with a `ValueError`.
 A shape or a list entry written as an expression is known only at the call, so a disagreement it hides fails when the kernel is compiled.
 A `constant` given by an expression is checked against its type at each call.
 

@@ -660,24 +660,84 @@ def check_window(instruction, buffer, starts, window_t, buffer_t):
                 )
 
 
-def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types):
+def loop_values(value):
+    """The loop values a value holds, through nested lists"""
+    if isinstance(value, LoopValue):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [found for item in value for found in loop_values(item)]
+    return []
+
+
+def bound(value, env):
+    """A value at env's loop variable values, through nested lists"""
+    if isinstance(value, LoopValue):
+        return evaluate(value.value, env)
+    if isinstance(value, (list, tuple)):
+        return type(value)(bound(item, env) for item in value)
+    return value
+
+
+def check_tile(instruction, value, where, buffer, typ, tile, region):
+    """Refuse a tile unlike its region's shape at any iteration of its loops,
+    but one of the region's element count where no loop sizes either"""
+    looped = loop_values([tile, region])
+    loops = {var: span for size in looped for var, span in size.loops.items()}
+    # Each binding of every looped dim's and size's variables
+    for env in iterations([term for size in looped for term in size.value], loops):
+        dims, shape = bound(tile, env), bound(region, env)
+        if shape != dims and (looped or math.prod(shape) != math.prod(dims)):
+            iteration = ', '.join(f'{var} = {at}' for var, at in env.items())
+            raise ValueError(
+                f"{instruction}: '%{value}' is {typ}[{','.join(str(dim) for dim in dims)}], "
+                f'not the shape [{",".join(str(dim) for dim in shape)}] of its {where} region in '
+                f'{buffer}' + (f' at {iteration}' if env else '')
+            )
+
+
+def tile_shape(tile, region):
+    """A tile's dims, a looped one replaced by its region's size, which check_tile found equal"""
+    return [region[k] if isinstance(dim, LoopValue) else dim for k, dim in enumerate(tile)]
+
+
+def window_type(typ, region, tile_t):
+    """The type of the cells a tile's region spans: the tile's own where a loop sizes the region"""
+    if loop_values(region):
+        return tile_t
+    return mlir_type(f'{typ}[{",".join(str(size) for size in region)}]')
+
+
+def sh_slice_load(lhs, lhs_type, rhs_loc, starts, ssa_types, window_t=None):
     lines, locs = index_constants(lhs, starts)
     t = mlir_type(lhs_type)
-    sizes = lhs_type.split('[', 1)[1].split(']')[0]
+    # A window of the tile's count in another shape, then reshaped to the tile
+    window_t = window_t or t
+    sliced = lhs if window_t == t else f'{lhs}.window'
+    sizes = ','.join(str(dim) for dim in tensor_dims(window_t))
     lines.append(
-        f'{lhs} = stablehlo.dynamic_slice {", ".join([rhs_loc] + locs)}, sizes = [{sizes}] : '
-        f'({", ".join([ssa_types[rhs_loc]] + ["tensor<i64>"] * len(locs))}) -> {t}'
+        f'{sliced} = stablehlo.dynamic_slice {", ".join([rhs_loc] + locs)}, sizes = [{sizes}] : '
+        f'({", ".join([ssa_types[rhs_loc]] + ["tensor<i64>"] * len(locs))}) -> {window_t}'
     )
+    if sliced != lhs:
+        lines.append(f'{lhs} = stablehlo.reshape {sliced} : ({window_t}) -> {t}')
     ssa_types[lhs] = t
     return '\n\t'.join(lines)
 
 
-def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types):
+def sh_slice_store(lhs_loc, lhs_type, rhs_loc, rhs_update, starts, ssa_types, window_t=None):
     lines, locs = index_constants(lhs_loc, starts)
     t = mlir_type(lhs_type)
+    # A tile of its window's count in another shape, reshaped to the window first
+    update_t = ssa_types[rhs_update]
+    if window_t and window_t != update_t:
+        lines.append(
+            f'{rhs_update}.window = stablehlo.reshape {rhs_update} : ({update_t}) -> {window_t}'
+        )
+        rhs_update, update_t = f'{rhs_update}.window', window_t
+        ssa_types[rhs_update] = update_t
     lines.append(
         f'{lhs_loc} = stablehlo.dynamic_update_slice {", ".join([rhs_loc, rhs_update] + locs)} : '
-        f'({", ".join([ssa_types[rhs_loc], ssa_types[rhs_update]] + ["tensor<i64>"] * len(locs))}) -> {t}'
+        f'({", ".join([ssa_types[rhs_loc], update_t] + ["tensor<i64>"] * len(locs))}) -> {t}'
     )
     ssa_types[lhs_loc] = t
     return lines

@@ -46,3 +46,11 @@ class ExpressionWriter(IDLV2ExprVisitor):
 def python(tree: IDLV2ExprParser.ExpressionContext) -> str:
     """The Python that computes a value."""
     return ExpressionWriter().visit(tree)
+
+
+def integer(ctx, expressions) -> str:
+    """An integer as Python: a literal's value, or an expression evaluated at each call."""
+    if ctx.EXPRESSION():
+        return python(expressions[ctx.EXPRESSION()])
+    # Drop a literal's leading zeros, which Python refuses
+    return str(int(ctx.getText()))
