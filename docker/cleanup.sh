@@ -18,7 +18,7 @@ for arg in "$@"; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $arg" >&2
+      echo "Unknown arg: $arg" >&2
       usage >&2
       exit 1
       ;;
@@ -51,7 +51,7 @@ else
   exit 1
 fi
 
-# collect candidate containers (all containers using the image)
+# Every container of the image
 mapfile -t CONTAINERS < <(docker ps -a --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | awk -v img="${IMAGE_NAME}" '$3 == img')
 
 NUM_CONTAINERS=${#CONTAINERS[@]}
