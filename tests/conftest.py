@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zlib
 
 import jax
 import jax.numpy as jnp
@@ -41,7 +42,8 @@ def pytest_configure(config):
 
 # Element types as a semantics spells them
 FLOATS = ['f64', 'f32', 'f16', 'bf16']
-INTEGERS = ['u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64']
+SIGNED = ['s8', 's16', 's32', 's64']
+INTEGERS = ['u8', 'u16', 'u32', 'u64', *SIGNED]
 EVERY = FLOATS + INTEGERS + ['pred']
 
 # Each element type and the dtype that holds it
@@ -81,6 +83,46 @@ LOWERED = {
     'reduce_add': EVERY,
     'constant': EVERY,
     'iota': FLOATS + INTEGERS,
+    'abs': FLOATS + SIGNED,
+    'negate': FLOATS + INTEGERS,
+    'sign': FLOATS + SIGNED,
+    'mulhi': INTEGERS,
+    'remainder': FLOATS + INTEGERS,
+    'power': FLOATS + INTEGERS,
+    'sqrt': FLOATS,
+    'rsqrt': FLOATS,
+    'cbrt': FLOATS,
+    'exponential_minus_one': FLOATS,
+    'log': FLOATS,
+    'log_plus_one': FLOATS,
+    'logistic': FLOATS,
+    'erf': FLOATS,
+    'sine': FLOATS,
+    'cosine': FLOATS,
+    'tan': FLOATS,
+    'asin': FLOATS,
+    'acos': FLOATS,
+    'atan2': FLOATS,
+    'sinh': FLOATS,
+    'cosh': FLOATS,
+    'tanh': FLOATS,
+    'asinh': FLOATS,
+    'acosh': FLOATS,
+    'atanh': FLOATS,
+    'floor': FLOATS,
+    'ceil': FLOATS,
+    'round_nearest_afz': FLOATS,
+    'round_nearest_even': FLOATS,
+    'and': INTEGERS + ['pred'],
+    'or': INTEGERS + ['pred'],
+    'not': INTEGERS + ['pred'],
+    'shift_left': INTEGERS,
+    'shift_right_logical': INTEGERS,
+    'shift_right_arithmetic': INTEGERS,
+    'popcnt': INTEGERS,
+    'count_leading_zeros': INTEGERS,
+    'is_finite': FLOATS,
+    'reduce_precision': FLOATS,
 }
 
 
@@ -163,6 +205,24 @@ def ulps(out, exact, t):
     finfo = ml_dtypes.finfo(DTYPES[t])
     scale = np.floor(np.log2(np.maximum(np.abs(exact), finfo.smallest_normal)))
     return float(np.max(np.abs(out.astype(np.float64) - exact) / np.exp2(scale - finfo.nmant)))
+
+
+def assert_exact(out, expected):
+    """out equals expected: a nan matches a nan of either sign, a zero only a zero of its sign"""
+    if out.dtype in [DTYPES[t] for t in FLOATS]:
+        out, expected = out.astype(np.float64), np.asarray(expected).astype(np.float64)
+        np.testing.assert_array_equal(out, expected)
+        # A nan's sign is the platform's
+        signed = ~np.isnan(expected)
+        np.testing.assert_array_equal(np.signbit(out[signed]), np.signbit(expected[signed]))
+    else:
+        np.testing.assert_array_equal(out, expected)
+
+
+@pytest.fixture
+def rng(request):
+    """A generator seeded by the test's name, so its data do not depend on the tests before it"""
+    return np.random.default_rng(zlib.crc32(request.node.name.encode()))
 
 
 def each_type(types, check):
