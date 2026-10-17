@@ -527,6 +527,69 @@ def test_numpy_integer_declaration_runs():
     assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
 
 
+# Each dtype a declaration may take that the oracle lacks
+@pytest.mark.parametrize(
+    'pieces, message',
+    [
+        (
+            {'input': [dict(INPUT[0], shape=(16, 64), dtype=np.complex64), *INPUT[1:]]},
+            "input 0 of kernel 'copy_q': dtype complex64 is not supported by the oracle",
+        ),
+        (
+            {'input': [*INPUT[:2], dict(INPUT[2], dtype='bf16')]},
+            "input 2 of kernel 'copy_q': dtype 'bf16' is not supported by the oracle",
+        ),
+        (
+            {'output': [dict(OUTPUT[0], dtype=jnp.float8_e4m3b11fnuz)]},
+            "output 0 of kernel 'copy_q': dtype float8_e4m3b11fnuz is not supported by the oracle",
+        ),
+        (
+            {
+                'input': INPUT[1:],
+                'constant': [
+                    dict(
+                        INPUT[0],
+                        shape=(16, 64),
+                        dtype=np.complex64,
+                        value=np.zeros((16, 64), np.complex64),
+                    )
+                ],
+            },
+            "constant 0 of kernel 'copy_q': dtype complex64 is not supported by the oracle",
+        ),
+    ],
+    ids=['input', 'string', 'output', 'constant'],
+)
+def test_unsupported_dtype_refused(pieces, message):
+    @kernel(**({'hbm': 32768, 'input': INPUT, 'constant': [], 'output': OUTPUT} | pieces))
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    with pytest.raises(TypeError) as refusal:
+        copy_q('fsim-compile')()
+    assert str(refusal.value) == message
+
+
+# A dtype as a string or a NumPy dtype runs
+@pytest.mark.parametrize('dtype', ['bfloat16', np.dtype(jnp.bfloat16)], ids=['string', 'numpy'])
+def test_dtype_forms_run(dtype):
+    @kernel(
+        hbm=32768,
+        input=[dict(spec, dtype=dtype) for spec in INPUT],
+        constant=[],
+        output=[dict(OUTPUT[0], dtype=dtype)],
+    )
+    def copy_q():
+        api.load_rm(n=64, addr_in=0, addr_out=0)
+        api.store_rm(n=64, addr_in=0, addr_out=24576)
+
+    copy_q('fsim-compile')()
+    Q, K, V = load_qkv()
+    outputs, _ = copy_q('fsim')(Q, K, V)
+    assert np.asarray(outputs[0]).tobytes() == np.asarray(Q).tobytes()
+
+
 def test_kernel_keeps_its_executable():
     def copy(addr):
         """A kernel that copies the input at addr to the output"""
