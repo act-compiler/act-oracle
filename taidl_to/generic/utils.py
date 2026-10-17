@@ -316,7 +316,9 @@ def sh_dot(lhs, lhs_type, a, b, lhs_batch, lhs_contracting, rhs_batch, rhs_contr
     batching = f'batching_dims = {lb} x {rb}, ' if lb != '[]' or rb != '[]' else ''
     line = (
         f'{lhs} = stablehlo.dot_general {a}, {b}, {batching}'
-        f'contracting_dims = {dims_list(lhs_contracting)} x {dims_list(rhs_contracting)} : '
+        f'contracting_dims = {dims_list(lhs_contracting)} x {dims_list(rhs_contracting)}, '
+        # The highest precision on every platform
+        'precision = [HIGHEST, HIGHEST] : '
         f'({ssa_types[a]}, {ssa_types[b]}) -> {t}'
     )
     ssa_types[lhs] = t

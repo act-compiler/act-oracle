@@ -266,6 +266,15 @@ add_typed_instruction(
     comp=['k'],
 )
 
+# An f32 dot of 64 by 64 values
+add_typed_instruction(
+    ops,
+    'large_f32_dot',
+    [('f32', [64, 64]), ('f32', [64, 64])],
+    '%y = f32[64,64] dot(%x0, %x1), lhs_contracting_dims={1}, rhs_contracting_dims={0};',
+    ('f32', [64, 64]),
+)
+
 generate_oracle(ops)
 decorator, api = import_oracle(os.path.join(ops.base_dir, 'targets', 'OPS'), 'oracle_OPS')
 
@@ -311,6 +320,17 @@ def test_dot_batch_dimensions():
     out = run('dot_batched', [a, b], (8, 16, 16), jnp.bfloat16)
     expected = np.einsum('bik,bkj->bij', np.asarray(a, np.float64), np.asarray(b, np.float64))
     np.testing.assert_array_equal(out, expected)
+
+
+def test_f32_dot_at_the_highest_precision():
+    # Odd integers past 2048 need over 10 mantissa bits
+    x = (2 * rng.integers(1025, 2048, (64, 64)) - 1).astype(np.float32)
+    y = rng.integers(0, 2, (64, 64)).astype(np.float32)
+    out = run_typed(decorator, api, 'large_f32_dot', [x, y], ('f32', [64, 64]))
+    assert_exact(out, x.astype(np.float64) @ y.astype(np.float64))
+    # The traced dot carries it on every platform
+    dots = [line for line in api.instruction_scopes['main'] if 'dot_general' in line]
+    assert dots and all('precision = [HIGHEST, HIGHEST]' in line for line in dots)
 
 
 def test_integer_buffer_starts_at_zero():
