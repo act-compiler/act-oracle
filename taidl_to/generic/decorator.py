@@ -1,4 +1,5 @@
 import copy
+import itertools
 import time
 from collections import defaultdict
 
@@ -9,6 +10,7 @@ from jax.extend.backend import backends, get_backend, get_compile_options
 
 from . import api
 from .build import print_handler_ext
+from .utils import spec_bytes
 
 backend = None
 
@@ -56,6 +58,38 @@ def compile_module(module: str):
     elapsed = round((time.time() - start) * 1000, 3)
 
     return executable, device, elapsed
+
+
+def check_hbm(name, hbm, input, constant, output):
+    # Every input, constant and output inside HBM
+    pieces = {
+        'input': [(spec['addr'], spec_bytes(spec)[0]) for spec in input],
+        'constant': [(const['addr'], np.asarray(const['value']).nbytes) for const in constant],
+        'output': [(spec['addr'], spec_bytes(spec)[0]) for spec in output],
+    }
+    for kind, spans in pieces.items():
+        for i, (addr, nbytes) in enumerate(spans):
+            if addr < 0 or addr + nbytes > hbm:
+                raise ValueError(
+                    f'{kind} {i} of kernel {name!r}, {nbytes} bytes at byte {addr}, '
+                    f'runs outside HBM of {hbm} bytes'
+                )
+
+    # Inputs and constants laid apart; outputs may lie over them
+    laid = sorted(
+        (
+            (addr, nbytes, kind, i)
+            for kind in ('input', 'constant')
+            for i, (addr, nbytes) in enumerate(pieces[kind])
+        ),
+        key=lambda piece: piece[:2],
+    )
+    for (last_addr, last_nbytes, last_kind, j), (addr, nbytes, kind, i) in itertools.pairwise(laid):
+        if addr < last_addr + last_nbytes:
+            raise ValueError(
+                f'{kind} {i} of kernel {name!r}, {nbytes} bytes at byte {addr}, '
+                f'overlaps {last_kind} {j}, {last_nbytes} bytes at byte {last_addr}'
+            )
 
 
 def kernel(hbm: int, input: list, output: list, constant=()):
@@ -117,6 +151,7 @@ def kernel(hbm: int, input: list, output: list, constant=()):
                 set_simulation_backend()
 
             if mode == 'fsim-compile':
+                check_hbm(func.__name__, hbm, input, constant, output)
                 reset_api()
                 counters, _ = api.semantic_init(hbm)
                 api.global_counters = counters
