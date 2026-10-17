@@ -6,14 +6,16 @@ This page says what the oracle adds: the operation each word lowers to, the elem
 
 ## Element types
 
-The oracle lowers 13 element types: the floats `f64`, `f32`, `f16` and `bf16`, the integers `u8`, `u16`, `u32`, `u64`, `s8`, `s16`, `s32` and `s64`, and `pred`.
-The types the grammar lexes beyond these, `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` and `f8e5m2`, are refused by name, in a data model or in a semantics.
+The oracle lowers every element type the grammar lexes, 19 in all: the floats `f64`, `f32`, `f16`, `bf16`, `f8e4m3fn` and `f8e5m2`, the integers `u2`, `u4`, `u8`, `u16`, `u32`, `u64`, `s2`, `s4`, `s8`, `s16`, `s32` and `s64`, and `pred`.
+At `s2` and `u2` it refuses `dot` and `concatenate` by name.
 A word's type is the element type of its first operand, or of its result where it has no operand.
 A `pred` moves to and from its byte by a `convert`, in a semantics and at a kernel's inputs and outputs.
+A kernel declares a value of `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` or `f8e5m2` by its jax dtype, `jnp.int2`, `jnp.uint2`, `jnp.int4`, `jnp.uint4`, `jnp.float8_e4m3fn` or `jnp.float8_e5m2`.
+In HBM a value of `s2` or `u2` packs four elements to a byte and one of `s4` or `u4` two, by a `bitcast_convert`, as a semantics packs it; a kernel's input, constant or output of a sub-byte type whose elements fill no whole number of bytes is refused by name when the kernel is compiled.
 
 ## The words
 
-In the table, every type is the 13 above, signed is `s8` to `s64`, and a word at a type the table does not list for it is refused by name.
+In the table, every type is the 19 above, signed is `s2` to `s64`, and a word at a type the table does not list for it is refused by name.
 
 | word                     | lowers to                                          | element types       |
 | ------------------------ | -------------------------------------------------- | ------------------- |
@@ -76,7 +78,7 @@ In the table, every type is the 13 above, signed is `s8` to `s64`, and a word at
 | `reshape`                | `stablehlo.reshape`                                | every type          |
 | `transpose`              | `stablehlo.transpose`                              | every type          |
 | `broadcast`              | `stablehlo.broadcast_in_dim`                       | every type          |
-| `concatenate`            | `stablehlo.concatenate`                            | every type          |
+| `concatenate`            | `stablehlo.concatenate`                            | all but `s2`, `u2`  |
 | `pad`                    | `stablehlo.pad`                                    | every type          |
 | `reverse`                | `stablehlo.reverse`                                | every type          |
 | `slice`                  | `stablehlo.slice`                                  | every type          |
@@ -84,7 +86,7 @@ In the table, every type is the 13 above, signed is `s8` to `s64`, and a word at
 | `dynamic_update_slice`   | `stablehlo.dynamic_update_slice`                   | every type          |
 | `gather`                 | `stablehlo.gather`                                 | every type          |
 | `copy`                   | `stablehlo.reshape` to its own type                | every type          |
-| `dot`                    | `stablehlo.dot_general`                            | every type          |
+| `dot`                    | `stablehlo.dot_general`                            | all but `s2`, `u2`  |
 | `cholesky`               | `stablehlo.cholesky`                               | floats              |
 | `triangular_solve`       | `stablehlo.triangular_solve`                       | floats              |
 | `batch_norm_inference`   | `stablehlo.batch_norm_inference`                   | floats              |
@@ -132,7 +134,8 @@ A `constant` given by an expression is checked against its type at each call.
 
 ## How the tests hold each word
 
-Each word but `parameter` runs at each type the table lists for it, in a kernel whose output is compared with a NumPy reference computed in the test; `parameter` reads every data model the tests declare.
+Each word but `parameter` runs at each type the table lists for it, `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` and `f8e5m2` aside, in a kernel whose output is compared with a NumPy reference computed in the test; `parameter` reads every data model the tests declare.
+At those six types the tests compare `add` and `reduce_max` exactly with jax, hold a `constant` at the two 8-bit floats to its value, and pass a kernel's input, constant and output through HBM and a data model unchanged.
 The transcendental words, `exponential`, `rsqrt`, `cbrt`, `exponential_minus_one`, `log`, `log_plus_one`, `logistic`, `erf`, `sine`, `cosine`, `tan`, `asin`, `acos`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, and `power` at a float type, are held within a number of ulps of the reference at the result's type, an infinity or a nan held exactly.
 An ulp is the unit in the last place of the result's type at the reference's magnitude.
 On a GPU the bounds double.

@@ -4,19 +4,23 @@ import os
 import tempfile
 
 import jax.numpy as jnp
+import ml_dtypes
 import numpy as np
 import pytest
 from conftest import (
     DTYPES,
     FLOATS,
     LOWERED,
+    NARROW,
     PLATFORM,
     ULPS,
     add_typed_instruction,
     assert_exact,
+    byte_count,
     each_type,
     import_oracle,
     run_typed,
+    stored,
     ulps,
 )
 from taidl import Accelerator
@@ -254,6 +258,31 @@ for word, (line, shape, _) in LINES.items():
         inputs = [(t, [2, 2]), (t, [2, 2])]
         add_typed_instruction(ops, f'{word}_{t}', inputs, line.format(t=t), (t, shape))
 
+# Each narrow type, read from and written to a wider one
+WIDER = {'s2': 's8', 'u2': 'u8', 's4': 's8', 'u4': 'u8', 'f8e4m3fn': 'f32', 'f8e5m2': 'f32'}
+NARROW_LINES = {
+    'add': ('%r = {t}[2,4] add(%n, %n);', [2, 4], lambda n: n + n),
+    'reduce_max': (
+        '%r = {t}[2] reduce_max(%n), dimensions={{1}};',
+        [2],
+        lambda n: jnp.max(n, axis=1),
+    ),
+}
+for word, (line, shape, _) in NARROW_LINES.items():
+    for t in NARROW:
+        w, dims = WIDER[t], ','.join(map(str, shape))
+        body = f'%n = {t}[2,4] convert(%x0);\n{line.format(t=t)}\n%y = {w}[{dims}] convert(%r);'
+        add_typed_instruction(ops, f'narrow_{word}_{t}', [(w, [2, 4])], body, (w, shape))
+
+# A buffer of each narrow type, stored to HBM as it starts
+for k, t in enumerate(NARROW):
+    ops.add_data_model(f'd{k + 2}', [4], [4], t)
+    instr = ops.add_instruction(f'store_{t}', [], ['addr_out'])
+    instr.set_inputs([[f'd{k + 2}', ['0'], ['4']]])
+    instr.set_outputs([['d0', ['@a.addr_out'], [str(byte_count(WIDER[t], [4, 4]))]]])
+    lines = f'%In0 = {t}[4,4] parameter(0);\n%y = {WIDER[t]}[4,4] convert(%In0);'
+    instr.add_semantics('ENTRY {\n' + lines + '\n' + stored('%y', WIDER[t], [4, 4]) + '\n}')
+
 # Lists of dot, reduce_add and broadcast, read at each call
 add_typed_instruction(
     ops,
@@ -378,6 +407,34 @@ def test_operation_at_each_type_it_takes(word):
             np.testing.assert_array_equal(out.astype(np.float64), exact)
 
     each_type(LOWERED[word], check)
+
+
+@pytest.mark.parametrize('word', NARROW_LINES)
+def test_narrow_types_compute_as_jax(word):
+    _, shape, reference = NARROW_LINES[word]
+
+    def check(t):
+        # Values whose sums stay in range
+        info = (ml_dtypes.finfo if t[0] == 'f' else ml_dtypes.iinfo)(DTYPES[t])
+        low, high = max(int(info.min) // 2, -4), min(int(info.max) // 2, 4)
+        x = rng.integers(low, high + 1, (2, 4))
+        if word == 'reduce_max':
+            # A row of the type's least
+            x[1] = int(info.min)
+        x = x.astype(DTYPES[WIDER[t]])
+        out = run_typed(decorator, api, f'narrow_{word}_{t}', [x], (WIDER[t], shape))
+        expected = np.asarray(reference(jnp.asarray(x).astype(DTYPES[t])))
+        np.testing.assert_array_equal(out.astype(np.float64), expected.astype(np.float64))
+
+    each_type(NARROW, check)
+
+
+def test_narrow_buffers_start_at_zero():
+    def check(t):
+        out = run_typed(decorator, api, f'store_{t}', [], (WIDER[t], [4, 4]))
+        np.testing.assert_array_equal(out, np.zeros((4, 4)))
+
+    each_type(NARROW, check)
 
 
 def test_names_the_oracle_does_not_reserve():

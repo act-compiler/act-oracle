@@ -56,7 +56,7 @@ TAIDL v2.13 refuses with a `SyntaxError`, as the spec loads, a semantics whose f
 It raises `NotImplementedError` for what the oracle does not support:
 
 - an operation word at an element type that `docs/operations.md` does not list for it, or an index of `dynamic_slice`, `dynamic_update_slice` or `gather` that is not of an integer type
-- a data model or value of `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` or `f8e5m2`, the element types the oracle does not lower
+- `dot` or `concatenate` at `s2` or `u2`, though the oracle lowers every element type the grammar lexes
 - an expression in backticks in an attribute that is not a list, such as `iota_dimension` or `epsilon`, which the oracle lowers from a literal alone
 - an instruction that updates the machine state
 - a name the generated oracle keeps for itself, as an instruction, attribute, data model or value

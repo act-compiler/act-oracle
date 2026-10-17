@@ -4,21 +4,27 @@ A value is its element type and its dims, each dim an int or an expression's tex
 A list attribute holds decimal text, which numbers reads as ints, or an expression's text.
 """
 
-# Bytes per element in memory, one for a pred
+# Bits per element in memory, eight for a pred
 WIDTHS = {
-    'f64': 8,
-    'f32': 4,
-    'f16': 2,
-    'bf16': 2,
-    'u8': 1,
-    'u16': 2,
-    'u32': 4,
-    'u64': 8,
-    's8': 1,
-    's16': 2,
-    's32': 4,
-    's64': 8,
-    'pred': 1,
+    'f64': 64,
+    'f32': 32,
+    'f16': 16,
+    'bf16': 16,
+    'f8e4m3fn': 8,
+    'f8e5m2': 8,
+    'u2': 2,
+    'u4': 4,
+    'u8': 8,
+    'u16': 16,
+    'u32': 32,
+    'u64': 64,
+    's2': 2,
+    's4': 4,
+    's8': 8,
+    's16': 16,
+    's32': 32,
+    's64': 64,
+    'pred': 8,
 }
 
 

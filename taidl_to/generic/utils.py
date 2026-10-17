@@ -124,10 +124,16 @@ MLIR_ELEM_TYPE = {
     'f32': 'f32',
     'f16': 'f16',
     'bf16': 'bf16',
+    'f8e4m3fn': 'f8E4M3FN',
+    'f8e5m2': 'f8E5M2',
+    'u2': 'ui2',
+    'u4': 'ui4',
     'u8': 'ui8',
     'u16': 'ui16',
     'u32': 'ui32',
     'u64': 'ui64',
+    's2': 'i2',
+    's4': 'i4',
     's8': 'i8',
     's16': 'i16',
     's32': 'i32',
@@ -153,11 +159,32 @@ def mlir_elem(mlir_t):
 
 
 def mlir_zero(mlir_t):
-    return '0.0' if mlir_elem(mlir_t) in ('f64', 'f32', 'f16', 'bf16') else '0'
+    floats = ('f64', 'f32', 'f16', 'bf16', 'f8E4M3FN', 'f8E5M2')
+    return '0.0' if mlir_elem(mlir_t) in floats else '0'
 
 
 # Exponent and mantissa bits of each float type
-FLOAT_BITS = {'f64': (11, 52), 'f32': (8, 23), 'f16': (5, 10), 'bf16': (8, 7)}
+FLOAT_BITS = {
+    'f64': (11, 52),
+    'f32': (8, 23),
+    'f16': (5, 10),
+    'bf16': (8, 7),
+    'f8e4m3fn': (4, 3),
+    'f8e5m2': (5, 2),
+}
+
+# Float types with no infinity, their top exponent finite
+NO_INFINITY = ('f8e4m3fn',)
+
+
+def float_largest(typ):
+    """The largest finite value of a float type, and half its unit in the last place"""
+    exponent, mantissa = FLOAT_BITS[typ]
+    top = (1 << (exponent - 1)) - 1 - mantissa
+    if typ in NO_INFINITY:
+        # The top exponent's all-ones mantissa is its nan
+        return ((1 << (mantissa + 1)) - 2) << (top + 1), 1 << top
+    return ((1 << (mantissa + 1)) - 1) << top, 1 << (top - 1)
 
 
 def mlir_literal(value, typ, shown=None):
@@ -169,19 +196,22 @@ def mlir_literal(value, typ, shown=None):
         exponent, mantissa = FLOAT_BITS[typ]
         if isinstance(value, int) or math.isfinite(value):
             # Out of range: a finite value rounding past typ's largest
-            past = ((1 << (mantissa + 2)) - 1) << ((1 << (exponent - 1)) - mantissa - 2)
-            if abs(value) >= past:
+            largest, half = float_largest(typ)
+            # At the tie, rounding to even keeps a no-infinity type's largest
+            bound = largest + half
+            if abs(value) > bound or (abs(value) == bound and typ not in NO_INFINITY):
                 raise ValueError(f'{shown} at {typ} is out of its range')
             # MLIR reads a float with a dot before its exponent
             text = repr(float(value))
             return text if '.' in text else text.replace('e', '.0e')
-        # A decimal past a double's range reads as an infinity
-        if math.isinf(value) and 'inf' not in shown:
+        # A decimal past a double's range reads as an infinity, which some types lack
+        if math.isinf(value) and ('inf' not in shown or typ in NO_INFINITY):
             raise ValueError(f'{shown} at {typ} is out of its range')
         # MLIR reads a non-finite float by its bits
         bits = ((1 << exponent) - 1) << mantissa
         if math.isnan(value):
-            bits |= 1 << (mantissa - 1)
+            # A type with no infinity sets every mantissa bit
+            bits |= (1 << mantissa) - 1 if typ in NO_INFINITY else 1 << (mantissa - 1)
         if math.copysign(1, value) < 0:
             bits |= 1 << (exponent + mantissa)
         return f'0x{bits:X}'
@@ -207,6 +237,10 @@ def reduce_init(op, typ):
     """The identity of reducer op at element type typ, as an MLIR literal; a float sum starts
     from +0.0, as XLA's does"""
     least, greatest = (-math.inf, math.inf) if typ in FLOAT_BITS else integer_range(typ)
+    if typ in NO_INFINITY:
+        # A float with no infinity is bounded by its largest
+        greatest = float_largest(typ)[0]
+        least = -greatest
     identities = {'add': 0, 'multiply': 1, 'maximum': least, 'minimum': greatest, 'or': 0, 'xor': 0}
     if typ not in FLOAT_BITS:
         # and's identity has every bit set
@@ -381,10 +415,16 @@ XLA_ELEM_TYPE = {
     'float16': 'f16',
     'float32': 'f32',
     'float64': 'f64',
+    'float8_e4m3fn': 'f8e4m3fn',
+    'float8_e5m2': 'f8e5m2',
+    'uint2': 'u2',
+    'uint4': 'u4',
     'uint8': 'u8',
     'uint16': 'u16',
     'uint32': 'u32',
     'uint64': 'u64',
+    'int2': 's2',
+    'int4': 's4',
     'int8': 's8',
     'int16': 's16',
     'int32': 's32',
@@ -392,16 +432,37 @@ XLA_ELEM_TYPE = {
     'bool': 'pred',
 }
 
+# Elements per byte of each sub-byte type
+PACKED = {'s2': 4, 'u2': 4, 's4': 2, 'u4': 2}
+
 
 def spec_mlir_type(dims, dtype):
     return mlir_type(f'{XLA_ELEM_TYPE[np.dtype(dtype).name]}[{",".join(str(d) for d in dims)}]')
 
 
+def packing(dtype):
+    """Elements per byte of a dtype in HBM, one unless it is sub-byte"""
+    return PACKED.get(XLA_ELEM_TYPE[np.dtype(dtype).name], 1)
+
+
 def spec_bytes(spec):
-    """Byte count of a spec and its u8 view shape; a multi-byte dtype gains a trailing dim"""
+    """Byte count of a spec and its u8 view shape; a multi-byte dtype gains a trailing dim, a
+    sub-byte one packs into whole bytes"""
     width = int(np.dtype(spec['dtype']).itemsize)
     dims = [int(d) for d in spec['shape']]
-    return width * int(np.prod(dims, dtype=np.int64)), dims + ([width] if width > 1 else [])
+    count, pack = int(np.prod(dims, dtype=np.int64)), packing(spec['dtype'])
+    if pack > 1:
+        return count // pack, [count // pack]
+    return width * count, dims + ([width] if width > 1 else [])
+
+
+def packed(name, value, value_t, dtype, nbytes):
+    """The lines packing value, a sub-byte value_t, into name, its nbytes bytes"""
+    packed_t = spec_mlir_type([nbytes, packing(dtype)], dtype)
+    return [
+        f'{name}.p = stablehlo.reshape {value} : ({value_t}) -> {packed_t}',
+        f'{name} = stablehlo.bitcast_convert {name}.p : ({packed_t}) -> {mlir_type(f"u8[{nbytes}]")}',
+    ]
 
 
 def byte_cast(dtype):
@@ -414,6 +475,15 @@ def kernel_prologue(hbm_size, inputs, constants):
     """The module's parameters, and the lines laying them and the constants into %d0.0"""
     params, lines, pieces = [], [], []
     for j, const in enumerate(constants):
+        if packing(const['dtype']) > 1:
+            # A sub-byte constant, by its values, packs as an input does
+            values = np.asarray(const['value']).reshape(-1)
+            nbytes, value_t = spec_bytes(const)[0], spec_mlir_type([values.size], const['dtype'])
+            given = ', '.join(str(int(v)) for v in values)
+            lines.append(f'%hbm.v{j} = stablehlo.constant dense<[{given}]> : {value_t}')
+            lines += packed(f'%hbm.c{j}', f'%hbm.v{j}', value_t, const['dtype'], nbytes)
+            pieces.append((int(const['addr']), nbytes, f'%hbm.c{j}', mlir_type(f'u8[{nbytes}]')))
+            continue
         flat = np.ascontiguousarray(np.asarray(const['value'])).reshape(-1).view(np.uint8)
         flat_t = mlir_type(f'u8[{flat.size}]')
         lines.append(f'%hbm.c{j} = stablehlo.constant dense<"0x{flat.tobytes().hex()}"> : {flat_t}')
@@ -423,9 +493,12 @@ def kernel_prologue(hbm_size, inputs, constants):
         nbytes, byte_dims = spec_bytes(spec)
         byte_t, flat_t = spec_mlir_type(byte_dims, np.uint8), mlir_type(f'u8[{nbytes}]')
         params.append(f'%arg{i}: {arg_t}')
-        cast = byte_cast(spec['dtype'])
-        lines.append(f'%hbm.b{i} = stablehlo.{cast} %arg{i} : ({arg_t}) -> {byte_t}')
-        lines.append(f'%hbm.f{i} = stablehlo.reshape %hbm.b{i} : ({byte_t}) -> {flat_t}')
+        if packing(spec['dtype']) > 1:
+            lines += packed(f'%hbm.f{i}', f'%arg{i}', arg_t, spec['dtype'], nbytes)
+        else:
+            cast = byte_cast(spec['dtype'])
+            lines.append(f'%hbm.b{i} = stablehlo.{cast} %arg{i} : ({arg_t}) -> {byte_t}')
+            lines.append(f'%hbm.f{i} = stablehlo.reshape %hbm.b{i} : ({byte_t}) -> {flat_t}')
         pieces.append((int(spec['addr']), nbytes, f'%hbm.f{i}', flat_t))
 
     parts, cursor = [], 0
@@ -461,9 +534,18 @@ def kernel_epilogue(hbm_loc, outputs, ssa_types):
         lines.append(
             f'%out.s{i} = stablehlo.slice {hbm_loc} [{addr}:{addr + nbytes}:1] : ({ssa_types[hbm_loc]}) -> {flat_t}'
         )
-        lines.append(f'%out.r{i} = stablehlo.reshape %out.s{i} : ({flat_t}) -> {byte_t}')
-        cast = byte_cast(spec['dtype'])
-        lines.append(f'%out.o{i} = stablehlo.{cast} %out.r{i} : ({byte_t}) -> {out_t}')
+        pack = packing(spec['dtype'])
+        if pack > 1:
+            # A sub-byte output unpacks from its bytes
+            packed_t = spec_mlir_type([nbytes, pack], spec['dtype'])
+            lines.append(
+                f'%out.p{i} = stablehlo.bitcast_convert %out.s{i} : ({flat_t}) -> {packed_t}'
+            )
+            lines.append(f'%out.o{i} = stablehlo.reshape %out.p{i} : ({packed_t}) -> {out_t}')
+        else:
+            lines.append(f'%out.r{i} = stablehlo.reshape %out.s{i} : ({flat_t}) -> {byte_t}')
+            cast = byte_cast(spec['dtype'])
+            lines.append(f'%out.o{i} = stablehlo.{cast} %out.r{i} : ({byte_t}) -> {out_t}')
         names.append(f'%out.o{i}')
         types.append(out_t)
     return lines, names, types

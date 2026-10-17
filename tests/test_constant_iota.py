@@ -37,8 +37,20 @@ LITERALS = {
 
 # Float literals: non-finite, a signed zero, two that round
 SPECIALS = ['inf', '-inf', 'nan', '-nan', '-0.0', '65504', '1e-30']
+# Each float's specials, an 8-bit float's in its range
+SPECIAL = {
+    **dict.fromkeys(FLOATS, SPECIALS),
+    'f8e4m3fn': ['nan', '-nan', '-0.0', '1e-30'],
+    'f8e5m2': ['inf', '-inf', 'nan', '-nan', '-0.0', '1e-30'],
+}
 # Literals past a type's largest value that round to it
-LARGEST = {'f32': '3.4028235e38', 'f16': '65519', 'bf16': '3.39e38'}
+LARGEST = {
+    'f32': '3.4028235e38',
+    'f16': '65519',
+    'bf16': '3.39e38',
+    'f8e4m3fn': '464',
+    'f8e5m2': '61439',
+}
 # A pred takes a number too
 PREDS = ['false', '0', '1']
 
@@ -55,8 +67,8 @@ for t, (text, _) in LITERALS.items():
     for shape, dims in SHAPES.items():
         typed = f'{t}[{",".join(map(str, dims))}]'
         add(ops, f'constant_{t}_{shape}', f'%y = {typed} constant({text});', t, dims)
-for t in FLOATS:
-    for k, text in enumerate(SPECIALS):
+for t, texts in SPECIAL.items():
+    for k, text in enumerate(texts):
         add(ops, f'special_{t}_{k}', f'%y = {t}[2] constant({text});', t, (2,))
 for t, text in LARGEST.items():
     add(ops, f'largest_{t}', f'%y = {t}[2] constant({text});', t, (2,))
@@ -103,11 +115,11 @@ def test_constant():
 def test_constant_special():
     def check(t):
         # A float rounds to its type, to nearest
-        for k, text in enumerate(SPECIALS):
+        for k, text in enumerate(SPECIAL[t]):
             with np.errstate(under='ignore'):
                 run(f'special_{t}_{k}', np.full(2, float(text), DTYPES[t]))
 
-    each_type(FLOATS, check)
+    each_type(SPECIAL, check)
 
 
 def test_constant_largest():
@@ -165,6 +177,8 @@ UNHELD = {
     'f32': [('3.4028236e38', 'out of its range'), ('false', 'a pred literal')],
     'bf16': [('-1e39', 'out of its range')],
     'f64': [('1e400', 'out of its range')],
+    'f8e4m3fn': [('465', 'out of its range'), ('inf', 'out of its range')],
+    'f8e5m2': [('61440', 'out of its range')],
 }
 
 
