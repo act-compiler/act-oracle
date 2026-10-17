@@ -10,7 +10,7 @@ import pytest
 import taidl.antlr4
 from conftest import EVERY, LOWERED, each_type, import_oracle
 from taidl import Accelerator
-from taidl.operations import BOOL, INT, INTS, NUMBER, ONE_INT, OPERATIONS, RANGES
+from taidl.operations import INT, INTS, NUMBER, OPERATIONS
 
 from taidl_to import generate_oracle
 
@@ -25,14 +25,13 @@ def unmapped():
     return [word for word in re.findall(r"'([^']+)'", rule) if word not in lowered]
 
 
-# A value of each form an attribute takes
-SAMPLES = {INT: '0', INTS: '{0}', ONE_INT: '{0}', RANGES: '{[0:2]}', BOOL: 'true', NUMBER: '0.5'}
+# A sample value for each form a refused word's required attribute takes
+SAMPLES = {INT: '0', INTS: '{0}', NUMBER: '0.5'}
 
 
 def written(op, lhs='ROOT %Out0', t='u8', operand='%In0'):
     """A line that writes op at t on operand, with op's required attributes from OPERATIONS."""
-    takes, attributes = OPERATIONS[op]
-    count = takes[0] if isinstance(takes, tuple) else takes
+    count, attributes = OPERATIONS[op]
     operands = ', '.join([operand] * count)
     given = ''.join(
         f', {name}={form[0] if isinstance(form, tuple) else SAMPLES[form]}'
@@ -42,20 +41,8 @@ def written(op, lhs='ROOT %Out0', t='u8', operand='%In0'):
     return f'{lhs} = {t}[2] {op}({operands}){given};'
 
 
-@pytest.mark.parametrize('op', unmapped())
-def test_unmapped_operation_refused(op):
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    instr = acc.add_instruction('refused', [], ['addr'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics(f"""
-ENTRY {{
-    %In0 = u8[2] parameter(0);
-    {written(op)}
-}}
-""")
-    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
-        generate_oracle(acc)
+def test_every_word_lowers():
+    assert unmapped() == []
 
 
 @pytest.mark.parametrize('word', [word for word, types in LOWERED.items() if types != EVERY])
@@ -387,6 +374,51 @@ DISAGREE = {
     ROOT %Out0 = u8[4] copy(%b);""",
         "reduce_max of '%b' gives u8[2] of '%a' u8[2,2], not u8[4]",
     ),
+    'cholesky square': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[1] cholesky(%b);
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        "cholesky of '%c' takes square matrices in the last two dimensions, found '%b' f32[1]",
+    ),
+    'triangular_solve side': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[1,1] reshape(%b);
+    %d = f32[1,2] broadcast(%b), dimensions={0};
+    %e = f32[1,2] triangular_solve(%c, %d), left_side=false, transpose_a=NO_TRANSPOSE;
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        (
+            "triangular_solve of '%e' takes a right side whose columns meet '%c' f32[1,1], "
+            "found '%d' f32[1,2]"
+        ),
+    ),
+    'batch_norm_inference feature': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %c = f32[1] batch_norm_inference(%b, %b, %b, %b, %b), epsilon=0.5, feature_index=1;
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        (
+            "batch_norm_inference of '%c' takes a feature_index below the rank 1 of '%b' f32[1], "
+            'found 1'
+        ),
+    ),
+    'batch_norm_inference vectors': (
+        """%In0 = u8[4] parameter(0);
+    %a = u8[1,4] reshape(%In0);
+    %b = f32[1] bitcast_convert(%a);
+    %s = f32[] reshape(%b);
+    %c = f32[2] broadcast(%s), dimensions={};
+    %d = f32[2] batch_norm_inference(%c, %b, %b, %b, %b), epsilon=0.5, feature_index=0;
+    ROOT %Out0 = u8[4] reshape(%a);""",
+        (
+            "batch_norm_inference of '%d' takes vectors of the 2 features of '%c' f32[2], "
+            "found '%b' f32[1]"
+        ),
+    ),
     'input tile': (
         """%In0 = u8[8] parameter(0);
     ROOT %Out0 = u8[4] reshape(%In0);""",
@@ -463,9 +495,9 @@ COPY = 'ROOT %Out0 = u8[2] copy(%In0);'
 def test_refused_generation_leaves_no_oracle():
     base_dir = tempfile.mkdtemp()
     generate_oracle(two_bytes(base_dir, 'first', COPY))
-    op = unmapped()[0]
-    with pytest.raises(NotImplementedError, match=f"refused: operation '{op}'"):
-        generate_oracle(two_bytes(base_dir, 'refused', written(op)))
+    # abs at an unsigned type
+    with pytest.raises(NotImplementedError, match="refused: operation 'abs' at type 'u8'"):
+        generate_oracle(two_bytes(base_dir, 'refused', written('abs')))
     # Neither the previous oracle nor a part of the new one
     assert os.listdir(os.path.join(base_dir, 'targets', 'REGENERATED')) == []
 
