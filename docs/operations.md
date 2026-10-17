@@ -1,6 +1,6 @@
 # Operations
 
-The oracle lowers every operation word of TAIDL v2.13 to the StableHLO operation that means the same, or to a CHLO operation where StableHLO has none.
+The oracle lowers every operation word of TAIDL v2.14 to the StableHLO operation that means the same, or to a CHLO operation where StableHLO has none.
 What each word takes, its operands and its attributes, is the language's and is documented in [TAIDL's operations reference](https://github.com/act-compiler/taidl/blob/master/docs/operations.md).
 This page says what the oracle adds: the operation each word lowers to, the element types at which it lowers, what it refuses by name when an oracle is generated, and how closely the tests hold each word to a reference.
 

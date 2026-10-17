@@ -39,7 +39,7 @@ A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` 
 Calls between `api.start_loop(var, start, end)` and `api.end_loop()` are traced when the outermost loop ends, so a call refused inside a loop raises its error from the `end_loop` that closes the outermost loop.
 Every loop around a call whose instruction updates the state, or whose semantics holds a value that changes over the loop, is unrolled, each iteration traced in turn.
 A generation that is refused leaves no oracle, not even one an earlier generation wrote.
-TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
+TAIDL-TO pins TAIDL v2.14 beside jax and jaxlib 0.11.2.
 
 ## Examples
 
@@ -53,7 +53,7 @@ The tests hold each attention kernel to its golden there and to a NumPy referenc
 
 ## What an oracle refuses
 
-TAIDL v2.13 refuses with a `SyntaxError`, as the spec loads, a semantics whose form the language does not accept, and leaves whether its shapes and types agree and whether an operation is supported to each generator.
+TAIDL v2.14 refuses with a `SyntaxError`, as the spec loads, a semantics whose form the language does not accept, and leaves whether its shapes and types agree and whether an operation is supported to each generator.
 `generate_oracle` then refuses, before it writes anything, a spec it cannot turn into an oracle, with an error that names the instruction or data model.
 It raises `NotImplementedError` for what the oracle does not support:
 
@@ -73,7 +73,7 @@ It raises `TypeError` for a `constant` number that is not an integer at an integ
 
 ## Operations
 
-An oracle lowers every operation word TAIDL v2.13 lexes, each to the StableHLO operation that means the same or to a CHLO one where StableHLO has none, and `docs/operations.md` gives each word's operation and the element types at which it lowers.
+An oracle lowers every operation word TAIDL v2.14 lexes, each to the StableHLO operation that means the same or to a CHLO one where StableHLO has none, and `docs/operations.md` gives each word's operation and the element types at which it lowers.
 On the CPU the tests hold every word exactly but the transcendental ones, held within 2 ulps at `bf16` and `f16` and 8 at `f32` and `f64`, and the one word that reaches past its bound within twice the most it was measured to reach.
 On a GPU those bounds double and an exact word stays exact, but `sqrt` at `f32` is held within 2 ulps.
 
