@@ -12,7 +12,7 @@ from conftest import EVERY, LOWERED, each_type, import_oracle
 from taidl import Accelerator
 from taidl.operations import INT, INTS, NUMBER, OPERATIONS
 
-from taidl_to import generate_oracle
+from taidl_to import generate_oracle, oracle_visitor
 
 
 def unmapped():
@@ -43,6 +43,24 @@ def written(op, lhs='ROOT %Out0', t='u8', operand='%In0'):
 
 def test_every_word_lowers():
     assert unmapped() == []
+
+
+def test_word_left_out_of_the_table_refused(monkeypatch):
+    # A word the grammar lexes that the table of lowered words leaves out
+    monkeypatch.delitem(oracle_visitor.TYPES, 'add')
+    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('refused', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics(f"""
+ENTRY {{
+    %In0 = u8[2] parameter(0);
+    {written('add')}
+}}
+""")
+    message = "^refused: operation 'add' is not supported by the oracle$"
+    with pytest.raises(NotImplementedError, match=message):
+        generate_oracle(acc)
 
 
 @pytest.mark.parametrize('word', [word for word, types in LOWERED.items() if types != EVERY])

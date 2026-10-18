@@ -232,6 +232,12 @@ class OracleVisitor(IDLV2Visitor):
         if op_name == 'parameter':
             return (lhs_name, lhs_type, lhs_shape)
 
+        # A word the table of lowered words leaves out
+        if op_name not in TYPES:
+            raise NotImplementedError(
+                f"{self.instruction}: operation '{op_name}' is not supported by the oracle"
+            )
+
         operand_names = []
         if op_name == 'constant':
             operand_names.append(self.constant_value(ctx.operands().operand(0).value(), lhs_type))
