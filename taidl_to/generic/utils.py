@@ -470,6 +470,13 @@ def sh_iota(lhs, lhs_type, dimension, ssa_types):
     return f'{lhs} = stablehlo.iota dim = {dimension} : {t}'
 
 
+def sh_pretty(op, lhs, lhs_type, operands, ssa_types):
+    """op on operands of its result's type, in StableHLO's pretty form"""
+    t = mlir_type(lhs_type)
+    ssa_types[lhs] = t
+    return f'{lhs} = {op} {", ".join(operands)} : {t}'
+
+
 def sh_generic(op, lhs, lhs_type, operands, ssa_types, properties):
     """op on operands in MLIR's generic form, which every dialect reads"""
     t = mlir_type(lhs_type)
