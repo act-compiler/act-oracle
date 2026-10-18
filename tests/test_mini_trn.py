@@ -68,6 +68,7 @@ def test_identity():
 
     A = load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', 'Q.dat'), (64, 64))
     outputs, _ = k('fsim')(A)
+    assert outputs[0].shape == (64, 64)
     # A load and a store move the bytes unchanged
     assert np.asarray(outputs[0]).tobytes() == np.asarray(A).tobytes()
 
@@ -86,6 +87,7 @@ def test_matmul():
     A = load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', 'Q.dat'), (64, 64))
     B = load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', 'K.dat'), (64, 64))
     outputs, _ = k('fsim')(A, B)
+    assert outputs[0].shape == (64, 64)
     # The dot rounds to bf16 once
     assert_near(outputs[0], bf16(np.asarray(A, np.float64) @ np.asarray(B, np.float64)))
 
@@ -103,6 +105,7 @@ def test_softmax():
 
     A = load_bf16_matrix(os.path.join(MINI_TRN_DIR, 'data', 'Q.dat'), (64, 64))
     outputs, _ = k('fsim')(A)
+    assert outputs[0].shape == (64, 64)
     # A @ I is A; later steps round to bf16
     E = bf16(np.exp(np.asarray(A, np.float64)))
     assert_near(outputs[0], bf16(E / bf16(E.sum(axis=1, keepdims=True))))
