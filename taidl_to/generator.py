@@ -67,8 +67,12 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
         shutil.copytree(
             generic_dir, new_oracle_dir, ignore=shutil.ignore_patterns('__pycache__', '*.pyc')
         )
+        print(f'Copied generic oracle structure to {oracle_gen_dir}')
         write_file(api_text, os.path.join(new_oracle_dir, 'api.py'))
+        print('Generated api.py')
+        print(f'Oracle API generation complete for {accelerator.name}')
         # Build the debug handler into it, afresh at every generation
+        print(f'Building oracle for {accelerator.name}')
         build_dir = os.path.join(new_oracle_dir, 'build')
         subprocess.run(
             [
@@ -83,7 +87,8 @@ def generate_oracle(accelerator: Accelerator, base_dir: str | None = None) -> No
             stdout=subprocess.DEVNULL,
         )
         subprocess.run(['cmake', '--build', build_dir], check=True, stdout=subprocess.DEVNULL)
+        print(f'Oracle build complete for {accelerator.name}')
         # Move it into place, complete
         os.rename(new_oracle_dir, oracle_gen_dir)
 
-    print(f'Generated the oracle for {accelerator.name} at {oracle_gen_dir}/')
+    print(f'The oracle API is located at {oracle_gen_dir}/')
