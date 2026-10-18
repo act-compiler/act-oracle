@@ -36,6 +36,8 @@ generate_oracle(acc)  # acc: a TAIDL Accelerator
 `generate_oracle(acc)` writes the oracle of the accelerator `acc` into `targets/<name>/oracle/` under the accelerator's `base_dir`, by default the directory of the file that creates the accelerator.
 The oracle is a Python package: `api.py` holds one function per instruction, named after it, `decorator.py` holds `kernel`, which declares a kernel's HBM size and its inputs, constants and outputs, and `build/` holds the debug handler.
 A kernel `k` decorated with `kernel` is launched by mode: `k('fsim-compile')()` traces its instruction calls into one StableHLO module, compiles it with XLA through jax and returns the kernel's declared inputs and its own compile time in milliseconds, and `k('fsim')(*inputs)` runs the compiled module on the inputs and returns its outputs and the run's time in milliseconds.
+Calls between `api.start_loop(var, start, end)` and `api.end_loop()` are traced when the outermost loop ends, so a call refused inside a loop raises its error from the `end_loop` that closes the outermost loop.
+Every loop around a call whose instruction updates the state, or whose semantics holds a value that changes over the loop, is unrolled, each iteration traced in turn.
 A generation that is refused leaves no oracle, not even one an earlier generation wrote.
 TAIDL-TO pins TAIDL v2.13 beside jax and jaxlib 0.11.2.
 
@@ -58,7 +60,6 @@ It raises `NotImplementedError` for what the oracle does not support:
 - an operation word at an element type that `docs/operations.md` does not list for it, or an index of `dynamic_slice`, `dynamic_update_slice` or `gather` that is not of an integer type
 - `dot` or `concatenate` at `s2` or `u2`, though the oracle lowers every element type the grammar lexes
 - an expression in backticks in an attribute that is not a list, such as `iota_dimension` or `epsilon`, which the oracle lowers from a literal alone
-- an instruction that updates the machine state
 - a name the generated oracle keeps for itself, as an instruction, attribute, data model or value
 
 It raises `ValueError` for a spec that contradicts itself:

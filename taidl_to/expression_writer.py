@@ -95,20 +95,17 @@ def python(tree: IDLV2ExprParser.ExpressionContext) -> str:
     return ExpressionWriter().visit(tree)
 
 
-def held(tree, text: str, instruction: str) -> str:
+def held(tree) -> str:
     """The Python that computes a value, held to one value over its loop if it reads an attribute."""
-    read = [ref[3:] for ref in References().visit(tree) if ref.startswith('@a.')]
-    if not read:
-        return python(tree)
-    given = ', '.join(f"'{name}': values['{name}']" for name in dict.fromkeys(read))
-    return f'fixed({instruction!r}, {text!r}, {python(tree)}, {{{given}}})'
+    looped = any(ref.startswith('@a.') for ref in References().visit(tree))
+    return f'fixed({python(tree)})' if looped else python(tree)
 
 
-def integer(ctx, expressions, instruction=None) -> str:
+def integer(ctx, expressions, holding=False) -> str:
     """An integer as Python: a literal's value, or an expression evaluated at each call and,
-    given its instruction, held to one value over its loop."""
+    if holding, held to one value over its loop."""
     if ctx.EXPRESSION():
         tree = expressions[ctx.EXPRESSION()]
-        return python(tree) if instruction is None else held(tree, ctx.getText(), instruction)
+        return held(tree) if holding else python(tree)
     # Drop a literal's leading zeros, which Python refuses
     return str(int(ctx.getText()))

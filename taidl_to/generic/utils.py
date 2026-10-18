@@ -152,7 +152,11 @@ def read_loop_expression(instruction, name, expression, loop_stack):
     An atom is a loop variable or a quotient (operator, a, b) of two values.
     """
     tokens = LOOP_TOKEN.findall(expression) + ['']
-    loops = {loop['var']: range(loop['start'], loop['end']) for loop in loop_stack}
+    loops = {
+        loop['var']: range(loop['start'], loop['end']) for loop in loop_stack if 'at' not in loop
+    }
+    # An unrolled loop's variable reads its iteration
+    unrolled = {loop['var']: loop['at'] for loop in loop_stack if 'at' in loop}
     unreadable = ValueError(f'{instruction}: {name} {expression!r} is not a loop expression')
     at = 0
 
@@ -191,6 +195,8 @@ def read_loop_expression(instruction, name, expression, loop_stack):
             return literal(int(token))
         if token in loops:
             return (((token,), 1),)
+        if token in unrolled:
+            return literal(unrolled[token])
         # A % followed by a name is a loop variable
         if len(token) > 1 and token[0] == '%':
             raise ValueError(
@@ -697,24 +703,18 @@ def check_tile(instruction, value, where, buffer, typ, tile, region):
             )
 
 
-def fixed(instruction, expression, value, given):
-    """A value's one integer over its loops, refused by name where it changes"""
+class Unroll(Exception):
+    """A held value changes over the while loops around its call, which must unroll"""
+
+
+def fixed(value):
+    """A value's one integer over its loops, raising Unroll where it changes"""
     if not isinstance(value, LoopValue):
         return value
-    # The first iteration at which it takes each value
-    taken = {}
-    for env in iterations(value.value, value.loops):
-        taken.setdefault(evaluate(value.value, env), env)
+    taken = {evaluate(value.value, env) for env in iterations(value.value, value.loops)}
     if len(taken) > 1:
-        shown = ', '.join(f'{name}={arg!r}' for name, arg in given.items() if isinstance(arg, str))
-        changes = ' and '.join(
-            f'{at} at ' + ', '.join(f'{var} = {i}' for var, i in env.items())
-            for at, env in list(taken.items())[:2]
-        )
-        raise ValueError(
-            f'{instruction}: {expression} with {shown} changes over its loop: {changes}'
-        )
-    return next(iter(taken))
+        raise Unroll
+    return taken.pop()
 
 
 def written(value):

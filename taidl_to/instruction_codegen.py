@@ -5,7 +5,7 @@ from collections import Counter
 
 from taidl import Instruction
 
-from .expression_writer import condition, held, integer, python
+from .expression_writer import condition, held, integer, python, reference
 from .semantic_generator import generate_semantic_code
 from .template import dict_text, generate_code, indent_code, layout, templates
 
@@ -25,9 +25,8 @@ def tile_dims(instruction: Instruction, value: str, holding=False) -> list:
     lines = instruction.instr_semantics_ast.instruction()
     line = next(line for line in lines if line.IDENTIFIER().getText() == value)
     shape = line.result_type().shape()
-    holder = instruction.instruction if holding else None
     expressions = instruction.instr_expression_asts
-    return [integer(dim, expressions, holder) for dim in shape.dim()] if shape else []
+    return [integer(dim, expressions, holding) for dim in shape.dim()] if shape else []
 
 
 def generate_constraints(instruction: Instruction) -> str:
@@ -43,6 +42,17 @@ def generate_constraints(instruction: Instruction) -> str:
             'condition': holds,
         }
         output += generate_code(templates['CHECK_CONSTRAINT'], mapping)
+
+    return output
+
+
+def generate_updates(instruction: Instruction) -> str:
+    """Generate each state update in order, its value an integer"""
+    output = ''
+
+    for tree in instruction.update_asts:
+        mapping = {'target': reference(tree.STATE().getText()), 'value': python(tree.expression())}
+        output += generate_code(templates['UPDATE_STATE'], mapping)
 
     return output
 
@@ -63,10 +73,7 @@ def generate_inputs(instruction: Instruction) -> str:
             dims_list = tile_dims(instruction, f'%In{counter}', holding=True)
         else:
             tile_list = size_list
-            dims_list = [
-                held(size, f'`{size.getText()}`', instruction.instruction) for size in sizes
-            ]
-            dims_list += [str(dim) for dim in model.unit_dim]
+            dims_list = [held(size) for size in sizes] + [str(dim) for dim in model.unit_dim]
 
         mapping = {
             'instruction': f"'{instruction.instruction}'",
@@ -142,11 +149,6 @@ def generate_api_function(instruction: Instruction) -> str:
     attr_list = ', '.join(instruction.comp_attr + instruction.parameters)
     func_name = instruction.instruction
 
-    if instruction.update:
-        raise NotImplementedError(
-            f"{func_name}: state update '{instruction.update[0]}' is not supported by the oracle"
-        )
-
     set_attributes = ''
     for attr in instruction.parameters:
         set_attributes += f"'{attr}': {attr},\n"
@@ -158,6 +160,7 @@ def generate_api_function(instruction: Instruction) -> str:
     set_comp_attr = dict_text(set_comp_attr)
 
     constraints = generate_constraints(instruction)
+    updates = generate_updates(instruction)
     sizes = generate_sizes(instruction)
     inputs = generate_inputs(instruction)
     semantics = generate_semantic_code(instruction)
@@ -166,6 +169,8 @@ def generate_api_function(instruction: Instruction) -> str:
     parts = []
     if constraints:
         parts.append(constraints)
+    if updates:
+        parts.append(updates)
     if sizes:
         parts.append(sizes)
     if inputs:
@@ -184,6 +189,7 @@ def generate_api_function(instruction: Instruction) -> str:
             'fsim_compile': fsim_compile,
             'set_attributes': set_attributes,
             'set_comp_attr': set_comp_attr,
+            'updates': str(bool(instruction.update)),
         },
     )
 

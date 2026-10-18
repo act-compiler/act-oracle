@@ -38,6 +38,7 @@ def set_simulation_backend(platform='CPU'):
 def reset_api():
     api.ssa_types = {}
     api.loop_stack = []
+    api.deferred = []
     api.cur_scope = 'main'
     api.state = copy.deepcopy(api.default_state)
     api.instruction_scopes = defaultdict(list)

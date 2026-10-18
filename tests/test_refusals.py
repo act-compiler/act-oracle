@@ -66,23 +66,6 @@ ENTRY {{
     each_type([t for t in EVERY if t not in LOWERED[word]], check)
 
 
-def test_state_update_refused():
-    acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
-    acc.add_initial_state('count', 0)
-    instr = acc.add_instruction('refused', [], ['addr'], update=['@s.count = @s.count + 1'])
-    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
-    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
-    instr.add_semantics("""
-ENTRY {
-    %In0 = u8[2] parameter(0);
-    ROOT %Out0 = u8[2] copy(%In0);
-}
-""")
-    message = "refused: state update '@s.count = @s.count [+] 1' is not supported by the oracle"
-    with pytest.raises(NotImplementedError, match=message):
-        generate_oracle(acc)
-
-
 def test_outputs_with_no_semantics_refused():
     acc = Accelerator('REFUSED', base_dir=tempfile.mkdtemp())
     instr = acc.add_instruction('refused', [], ['addr'])
@@ -635,3 +618,19 @@ ENTRY {{
     message = f"^{owner}: {named} name '{shown}' is reserved by the oracle$"
     with pytest.raises(NotImplementedError, match=message):
         generate_oracle(acc)
+
+
+# A module the oracle imports from, not by name, leaves its name free
+def test_instruction_named_copy_generates():
+    acc = Accelerator('COPY', base_dir=tempfile.mkdtemp())
+    instr = acc.add_instruction('copy', [], ['addr'])
+    instr.set_inputs([['d0', ['@a.addr'], ['2']]])
+    instr.set_outputs([['d0', ['@a.addr'], ['2']]])
+    instr.add_semantics("""
+ENTRY {
+    %In0 = u8[2] parameter(0);
+    ROOT %Out0 = u8[2] copy(%In0);
+}
+""")
+    generate_oracle(acc)
+    assert os.path.isfile(os.path.join(acc.base_dir, 'targets', 'COPY', 'oracle', 'api.py'))
