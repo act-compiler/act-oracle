@@ -10,7 +10,7 @@ from jax.extend.backend import backends, get_backend, get_compile_options
 
 from . import api
 from .build import print_handler_ext
-from .utils import XLA_ELEM_TYPE, packing, spec_bytes
+from .utils import XLA_ELEM_TYPE, packing, spec_bytes, warn_width
 
 backend = None
 
@@ -66,18 +66,24 @@ def check_declaration(name, hbm, input, constant, output):
         # An int or a NumPy integer, never a bool
         return isinstance(x, (int, np.integer)) and not isinstance(x, bool)
 
-    # The HBM size, each addr and dimension an integer
+    # The HBM size, each addr and dimension an integer, no dimension below zero
     if not integer(hbm):
         raise TypeError(f'kernel {name!r}: hbm {hbm!r} is not an integer')
+    warn_width(f'kernel {name!r}', 'hbm', int(hbm))
     for kind, specs in (('input', input), ('constant', constant), ('output', output)):
         for i, spec in enumerate(specs):
             what = f'{kind} {i} of kernel {name!r}'
             if not integer(spec['addr']):
                 raise TypeError(f'{what}: addr {spec["addr"]!r} is not an integer')
+            warn_width(what, 'addr', int(spec['addr']))
             for dim in spec['shape']:
                 if not integer(dim):
                     raise TypeError(
                         f'{what}: shape {spec["shape"]} has dimension {dim!r}, not an integer'
+                    )
+                if dim < 0:
+                    raise ValueError(
+                        f'{what}: shape {spec["shape"]} has dimension {dim}, below zero'
                     )
             # Each dtype one the oracle maps
             try:

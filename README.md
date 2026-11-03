@@ -87,6 +87,7 @@ It raises `TypeError` for:
 
 It raises `ValueError` for:
 
+- a shape dimension below zero
 - an input, constant or output of `jnp.int2`, `jnp.uint2`, `jnp.int4` or `jnp.uint4` whose elements fill no whole number of bytes
 - a constant whose value, read with `np.asarray`, has a shape or dtype other than the declared one
 - an input, constant or output that runs outside HBM, or an input or constant that shares a byte with another, though an output may lie over either
@@ -116,6 +117,19 @@ A call checks its instruction's constraints against the state it finds, then run
 `start_loop` raises `TypeError` for a bound that is not an integer and `ValueError` for a variable an enclosing loop already holds.
 `debug` reads each entry of its index as a Python integer literal, such as `0x10`, and prints the whole buffer for a bare `:`, as in `d1[:]`.
 It raises `ValueError` for a buffer it does not know, a missing or empty index, as in `d1[]`, an index with more entries than the buffer has dimensions or a window outside the buffer, and `TypeError` for an index that is not an integer.
+
+## What a call warns
+
+TAIDL's integers are signed 64-bit integers, and an oracle computes a call's values exactly, at any width.
+An instruction called in a kernel warns with a `UserWarning`, naming the instruction, of a value outside the signed 64-bit range:
+
+- an attribute the call passes
+- a region's start
+- a region's size or a semantics dimension that an expression gives
+
+`kernel` warns the same way of an HBM size or an address outside that range.
+A start that a loop expression gives is computed in the module in signed 64-bit integers, which wrap when a step overflows.
+The call checks its window at the exact value.
 
 ## Platforms
 
