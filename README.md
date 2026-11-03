@@ -70,6 +70,17 @@ It raises `ValueError` for a spec that contradicts itself:
 
 It raises `TypeError` for a `constant` number that is not an integer at an integer type, or a `pred` literal at another type.
 
+## The names an oracle reserves
+
+`generate_oracle` refuses a name in the spec that the generated oracle reserves, with a `NotImplementedError` that names it:
+
+| a name of      | reserved by the oracle                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| an instruction | a name with two underscores at each end, such as `__debug__`, and every name `api.py` defines or reads, such as `debug`, `state` or `str`                                                                               |
+| an attribute   | a name with two underscores at each end, `comp_attrs`, `cur_scope`, `global_counters`, `instruction_scopes`, `ssa_types` and `state`, and every global or built-in name its instruction's function reads, such as `str` |
+| a data model   | `In<k>` and `Out<k>` for any number `k`, such as `In0`, and `instruction_counter`, `total_loop_counter`, `loop_var`, `loop_final`, `call`, `debug_prefix`, `debug_slice` and `debug_slice_f64`                          |
+| a value        | `%` and a data model's name, such as `%d0`, and `%instruction_counter`, `%total_loop_counter`, `%loop_var` and `%loop_final`                                                                                            |
+
 ## Operations
 
 An oracle lowers every operation word TAIDL v2.15 lexes, each to the StableHLO operation that means the same or to a CHLO one where StableHLO has none, and `docs/operations.md` gives each word's operation and the element types at which it lowers.

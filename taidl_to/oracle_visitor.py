@@ -6,7 +6,7 @@ from taidl.antlr4 import IDLV2Parser, IDLV2Visitor
 
 from .expression_writer import integer
 from .generic.shapes import GATHER_DEFAULTS, GATHER_LISTS, declared, disagreement, known, numbers
-from .generic.utils import MLIR_ELEM_TYPE, mlir_literal
+from .generic.utils import mlir_literal
 from .template import generate_code, templates
 
 # Element types as a semantics spells them
@@ -435,12 +435,6 @@ class OracleVisitor(IDLV2Visitor):
         return ranges
 
     def visitResult_type(self, ctx: IDLV2Parser.Result_typeContext):
-        # Refuse by name a type the oracle does not lower
-        typ = ctx.TYPE().getText()
-        if typ not in MLIR_ELEM_TYPE:
-            raise NotImplementedError(
-                f"{self.instruction}: type '{typ}' is not supported by the oracle"
-            )
         # A rank-0 result has no shape
         if ctx.shape() is None:
             return (ctx.TYPE().getText(), '')
