@@ -571,19 +571,44 @@ def sh_broadcast(lhs, lhs_type, x, dims, ssa_types):
     return line
 
 
+# Each 2-bit integer type and the 8-bit one a dot computes it at
+DOT_WIDTHS = {'i2': 'i8', 'ui2': 'ui8'}
+
+
+def dot_type(mlir_t):
+    """The type a dot computes a value of mlir_t at: 8 bits for a 2-bit integer"""
+    elem = mlir_elem(mlir_t)
+    return mlir_t[: -len(elem) - 1] + DOT_WIDTHS[elem] + '>' if elem in DOT_WIDTHS else mlir_t
+
+
 def sh_dot(lhs, lhs_type, a, b, lhs_batch, lhs_contracting, rhs_batch, rhs_contracting, ssa_types):
+    """dot_general of a and b; a 2-bit operand or result computed at 8 bits"""
     t = mlir_type(lhs_type)
+    lines, operands = [], []
+    # A 2-bit operand converts up
+    for k, x in enumerate((a, b)):
+        x_t = ssa_types[x]
+        if dot_type(x_t) != x_t:
+            lines.append(f'{lhs}.w{k} = stablehlo.convert {x} : ({x_t}) -> {dot_type(x_t)}')
+            x = f'{lhs}.w{k}'
+            ssa_types[x] = dot_type(x_t)
+        operands.append(x)
+    a, b = operands
+    result = lhs if dot_type(t) == t else f'{lhs}.wide'
     lb, rb = dims_list(lhs_batch), dims_list(rhs_batch)
     batching = f'batching_dims = {lb} x {rb}, ' if lb != '[]' or rb != '[]' else ''
-    line = (
-        f'{lhs} = stablehlo.dot_general {a}, {b}, {batching}'
+    lines.append(
+        f'{result} = stablehlo.dot_general {a}, {b}, {batching}'
         f'contracting_dims = {dims_list(lhs_contracting)} x {dims_list(rhs_contracting)}, '
         # The highest precision on every platform
         'precision = [HIGHEST, HIGHEST] : '
-        f'({ssa_types[a]}, {ssa_types[b]}) -> {t}'
+        f'({ssa_types[a]}, {ssa_types[b]}) -> {dot_type(t)}'
     )
+    # A 2-bit result converts down
+    if result != lhs:
+        lines.append(f'{lhs} = stablehlo.convert {result} : ({dot_type(t)}) -> {t}')
     ssa_types[lhs] = t
-    return line
+    return '\n\t'.join(lines)
 
 
 def sh_reduce(op, lhs, lhs_type, x, dims, ssa_types):
