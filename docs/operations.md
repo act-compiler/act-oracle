@@ -116,7 +116,6 @@ A `NotImplementedError` names what the oracle does not lower, a `ValueError` a c
 
 | refused                                                                                                         | error                 |
 | --------------------------------------------------------------------------------------------------------------- | --------------------- |
-| an element type of the six the oracle does not lower                                                            | `NotImplementedError` |
 | a word at an element type the table above does not list for it                                                  | `NotImplementedError` |
 | an index of `dynamic_slice`, `dynamic_update_slice` or `gather` that is not an integer                          | `NotImplementedError` |
 | an expression in an attribute that is not a list, such as `iota_dimension` or `epsilon`                         | `NotImplementedError` |
