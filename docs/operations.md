@@ -7,7 +7,7 @@ This page says what the oracle adds: the operation each word lowers to, the elem
 ## Element types
 
 The oracle lowers every element type the grammar lexes, 19 in all: the floats `f64`, `f32`, `f16`, `bf16`, `f8e4m3fn` and `f8e5m2`, the integers `u2`, `u4`, `u8`, `u16`, `u32`, `u64`, `s2`, `s4`, `s8`, `s16`, `s32` and `s64`, and `pred`.
-At `s2` and `u2` it refuses `dot` and `concatenate` by name.
+A `dot` with an `s2` or `u2` operand or result computes at `s8` or `u8`, converting each such operand up and such a result down.
 A word's type is the element type of its first operand, or of its result where it has no operand.
 A `pred` moves to and from its byte by a `convert`, in a semantics and at a kernel's inputs and outputs.
 A kernel declares a value of `s2`, `u2`, `s4`, `u4`, `f8e4m3fn` or `f8e5m2` by its jax dtype, `jnp.int2`, `jnp.uint2`, `jnp.int4`, `jnp.uint4`, `jnp.float8_e4m3fn` or `jnp.float8_e5m2`.
@@ -78,7 +78,7 @@ In the table, every type is the 19 above, signed is `s2` to `s64`, and a word at
 | `reshape`                | `stablehlo.reshape`                                | every type          |
 | `transpose`              | `stablehlo.transpose`                              | every type          |
 | `broadcast`              | `stablehlo.broadcast_in_dim`                       | every type          |
-| `concatenate`            | `stablehlo.concatenate`                            | all but `s2`, `u2`  |
+| `concatenate`            | `stablehlo.concatenate`                            | every type          |
 | `pad`                    | `stablehlo.pad`                                    | every type          |
 | `reverse`                | `stablehlo.reverse`                                | every type          |
 | `slice`                  | `stablehlo.slice`                                  | every type          |
@@ -86,7 +86,7 @@ In the table, every type is the 19 above, signed is `s2` to `s64`, and a word at
 | `dynamic_update_slice`   | `stablehlo.dynamic_update_slice`                   | every type          |
 | `gather`                 | `stablehlo.gather`                                 | every type          |
 | `copy`                   | `stablehlo.reshape` to its own type                | every type          |
-| `dot`                    | `stablehlo.dot_general`                            | all but `s2`, `u2`  |
+| `dot`                    | `stablehlo.dot_general`                            | every type          |
 | `cholesky`               | `stablehlo.cholesky`                               | floats              |
 | `triangular_solve`       | `stablehlo.triangular_solve`                       | floats              |
 | `batch_norm_inference`   | `stablehlo.batch_norm_inference`                   | floats              |
