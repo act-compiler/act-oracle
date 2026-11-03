@@ -20,7 +20,7 @@ For detailed evaluations against existing baselines, refer to our [MICRO 2025 Ar
 ## Installation
 
 ```bash
-pip install git+https://github.com/act-compiler/act-oracle.git@v2.10
+pip install git+https://github.com/act-compiler/act-oracle.git@v2.11
 ```
 
 Generating an oracle compiles its debug handler, which needs a C++ compiler and Python's development headers on the machine, while CMake and nanobind are dependencies pip installs and jax's FFI headers come from jax.
