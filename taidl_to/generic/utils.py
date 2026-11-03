@@ -5,6 +5,7 @@ import itertools
 import math
 import numbers
 import re
+import warnings
 
 import numpy as np
 
@@ -264,6 +265,12 @@ def integral(value):
     return isinstance(value, numbers.Integral) and not isinstance(value, bool)
 
 
+def warn_width(call, what, value):
+    """Warn, naming the call, of an integer past the signed 64-bit range"""
+    if not -(1 << 63) <= value < 1 << 63:
+        warnings.warn(f'{call}: {what} is {value}, past the signed 64-bit range')
+
+
 def check_values(instruction, values, computational=False):
     """A call's values, each an int or a loop expression, refused by name if neither"""
     for name, value in values.items():
@@ -275,6 +282,9 @@ def check_values(instruction, values, computational=False):
                 f'{instruction}: computational attribute {name} takes an integer, '
                 f'not the loop expression {value!r}'
             )
+        # An integer past 64 bits warned of
+        if integral(value):
+            warn_width(instruction, name, int(value))
     # A NumPy integer as an int
     return {name: value if isinstance(value, str) else int(value) for name, value in values.items()}
 
@@ -621,6 +631,7 @@ def check_sizes(instruction, sizes, dims):
             read = size if isinstance(size, LoopValue) else LoopValue(literal(size), {})
             for env in iterations(read.value, read.loops):
                 at = evaluate(read.value, env)
+                warn_width(instruction, f'{kind} {text}', at)
                 if at < 1:
                     iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
                     raise ValueError(
@@ -667,6 +678,7 @@ def check_window(instruction, buffer, starts, window_t, buffer_t):
         read = start if isinstance(start, LoopValue) else LoopValue(literal(start), {})
         for env in iterations(read.value, read.loops):
             at = evaluate(read.value, env)
+            warn_width(instruction, f'start on dimension {k} of {buffer}', at)
             if at < 0 or at + size > extent:
                 iteration = ', '.join(f'{var} = {value}' for var, value in env.items())
                 raise ValueError(
